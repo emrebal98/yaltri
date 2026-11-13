@@ -1,0 +1,41 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+yaltri-core = { path = "crates/yaltri-core" }
+yaltri-calc = { path = "crates/yaltri-calc" }
+yaltri-platform = { path = "crates/yaltri-platform" }
+
+# GPUI Kit pins the matching gpui-pre snapshot and re-exports GPUI + components.
+# Exact pin: bump deliberately, GPUI is pre-1.0 and breaks between snapshots.
+gpui-kit = "=0.9.1"
+
+anyhow = "1"
+directories = "6"
+fend-core = "1.5"
+futures = "0.3"
+global-hotkey = "0.10"
+interprocess = "2.4"
+ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
+open = "5"
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tray-icon = "0.26"
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

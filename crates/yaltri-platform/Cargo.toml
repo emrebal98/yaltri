@@ -1,0 +1,21 @@
+[package]
+name = "yaltri-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+futures.workspace = true
+interprocess.workspace = true
+tracing.workspace = true
+yaltri-core.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+global-hotkey.workspace = true
+tray-icon.workspace = true
+windows-sys.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+global-hotkey.workspace = true
+ksni.workspace = true

@@ -1,0 +1,9 @@
+[package]
+name = "yaltri-calc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fend-core.workspace = true
+yaltri-core.workspace = true
