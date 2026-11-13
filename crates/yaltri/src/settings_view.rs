@@ -6,10 +6,13 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::switch::Switch;
 use gpui_kit::prelude::FluentBuilder as _;
+use std::time::{Duration, SystemTime};
+
 use gpui_kit::{
     App, AppContext as _, Bounds, Context, Entity, IntoElement, ParentElement as _, Render, SharedString,
-    Styled as _, TitlebarOptions, Window, WindowBounds, WindowOptions, div, px, size,
+    Styled as _, Task, TitlebarOptions, Window, WindowBounds, WindowOptions, div, px, size,
 };
+use yaltri_files::Phase;
 use yaltri_core::{Settings, ToolId};
 use yaltri_platform::hotkeys;
 
@@ -24,7 +27,7 @@ pub fn open(cx: &mut App) {
     }
 
     let options = WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(560.), px(520.)), cx))),
+        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(560.), px(680.)), cx))),
         titlebar: Some(TitlebarOptions { title: Some("Yaltri Ayarları".into()), ..Default::default() }),
         app_id: Some("yaltri".into()),
         ..Default::default()
@@ -47,8 +50,12 @@ struct ToolRow {
 
 pub struct SettingsView {
     rows: Vec<ToolRow>,
+    files_enabled: bool,
+    apps_enabled: bool,
     /// Feedback from the last save, or startup warnings. (`is_error`, text)
     status: Option<(bool, SharedString)>,
+    /// Re-renders once a second so the index status stays live.
+    _refresh: Task<()>,
 }
 
 impl SettingsView {
@@ -71,7 +78,21 @@ impl SettingsView {
                 ToolRow { tool, enabled: settings.is_enabled(tool), hotkey }
             })
             .collect();
-        Self { rows, status }
+        let refresh = cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    break;
+                }
+            }
+        });
+        Self {
+            rows,
+            files_enabled: settings.files.files_enabled,
+            apps_enabled: settings.files.apps_enabled,
+            status,
+            _refresh: refresh,
+        }
     }
 
     fn save(&mut self, cx: &mut Context<Self>) {
@@ -86,6 +107,8 @@ impl SettingsView {
             settings.set_enabled(row.tool, row.enabled);
             settings.set_hotkey(row.tool, spec);
         }
+        settings.files.files_enabled = self.files_enabled;
+        settings.files.apps_enabled = self.apps_enabled;
         if let Some((a, b)) = settings.hotkey_conflicts().first() {
             self.status = Some((
                 true,
@@ -114,12 +137,61 @@ fn hotkey_error_text(daemon: &Daemon) -> String {
         .join("\n")
 }
 
+/// `1893440` -> `1.893.440`
+fn thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push('.');
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn ago(t: SystemTime) -> String {
+    let secs = t.elapsed().map_or(0, |d| d.as_secs());
+    match secs {
+        0..60 => "az önce".into(),
+        60..3600 => format!("{} dk önce", secs / 60),
+        3600..86400 => format!("{} sa önce", secs / 3600),
+        _ => format!("{} gün önce", secs / 86400),
+    }
+}
+
+fn index_status_text(daemon: &Daemon) -> String {
+    let Some(s) = daemon.index_status() else {
+        return "Dosya araması kapalı.".into();
+    };
+    match s.phase {
+        Phase::Loading => "Önceki index yükleniyor…".into(),
+        Phase::Scanning { found } if s.entries > 0 => format!(
+            "Taranıyor… {} öğe bulundu. Arama bu sırada önceki index'le ({} öğe) çalışıyor.",
+            thousands(found),
+            thousands(s.entries)
+        ),
+        Phase::Scanning { found } => format!("İlk tarama… {} öğe bulundu.", thousands(found)),
+        Phase::Ready => {
+            let mut text = format!("{} öğe · {} MiB", thousands(s.entries), s.memory_bytes / (1 << 20));
+            if let (Some(at), Some(took)) = (s.last_scan, s.last_scan_took) {
+                text += &format!(" · son tarama {} ({:.0} sn sürdü)", ago(at), took.as_secs_f32());
+            }
+            if s.watched.is_empty() {
+                text += " · canlı izleme yok, periyodik taranıyor";
+            }
+            text
+        }
+    }
+}
+
 impl Render for SettingsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let daemon = cx.global::<Daemon>();
         let session = daemon.session;
         let settings_path = daemon.paths.settings_file().display().to_string();
+        let index_text = index_status_text(daemon);
 
         let tool_rows = self.rows.iter().enumerate().map(|(ix, row)| {
             let implemented = is_implemented(row.tool);
@@ -181,6 +253,49 @@ impl Render for SettingsView {
             .text_color(theme.foreground)
             .child(div().text_xl().child("Araçlar"))
             .children(tool_rows)
+            .child(div().text_xl().child("Arama kaynakları"))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .p_3()
+                    .border_1()
+                    .border_color(theme.border)
+                    .rounded(theme.radius)
+                    .child(
+                        Switch::new("apps-enabled")
+                            .label("Uygulamalar")
+                            .checked(self.apps_enabled)
+                            .on_change(cx.listener(|this, value: &bool, _, cx| {
+                                this.apps_enabled = *value;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Switch::new("files-enabled")
+                            .label("Dosya ve klasörler")
+                            .checked(self.files_enabled)
+                            .on_change(cx.listener(|this, value: &bool, _, cx| {
+                                this.files_enabled = *value;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap_2()
+                            .child(div().flex_1().text_xs().text_color(theme.muted_foreground).child(index_text))
+                            .child(
+                                Button::new("rescan")
+                                    .outline()
+                                    .label("Yeniden tara")
+                                    .on_click(cx.listener(|_, _, _, cx| cx.global::<Daemon>().rescan_files())),
+                            ),
+                    ),
+            )
             .when_some(self.status.clone(), |d, (is_error, text)| {
                 d.child(
                     div()

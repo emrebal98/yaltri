@@ -25,6 +25,14 @@ impl Paths {
         self.config_dir.join("settings.toml")
     }
 
+    pub fn history_file(&self) -> PathBuf {
+        self.data_dir.join("history.toml")
+    }
+
+    pub fn file_index(&self) -> PathBuf {
+        self.data_dir.join("files.idx")
+    }
+
     pub fn log_dir(&self) -> PathBuf {
         self.data_dir.join("logs")
     }

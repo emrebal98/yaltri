@@ -12,6 +12,7 @@ use gpui_kit::{
 };
 use yaltri_core::search::search_all;
 use yaltri_core::{ItemAction, SearchItem};
+use yaltri_platform::launch;
 use yaltri_platform::session::Session;
 
 use crate::daemon::Daemon;
@@ -123,7 +124,7 @@ pub struct Launcher {
 
 impl Launcher {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Ara veya hesapla…  (ör. 2^10, 5 km to mi)"));
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Uygulama, dosya ara veya hesapla…"));
 
         let on_change = cx.subscribe_in(&input, window, |this, _, event, window, cx| {
             if matches!(event, InputEvent::Change) {
@@ -171,7 +172,7 @@ impl Launcher {
             "escape" => close(window, cx),
             "up" => self.move_selection(-1, cx),
             "down" | "tab" => self.move_selection(1, cx),
-            // Ctrl+Enter: open the containing folder instead of the item.
+            // Ctrl+Enter: show the item in its folder instead of opening it.
             "enter" => self.accept(self.selected, ks.modifiers.control, window, cx),
             _ => return false,
         }
@@ -191,11 +192,19 @@ impl Launcher {
         let query = self.input.read(cx).value().to_string();
         let daemon = cx.global::<Daemon>();
         let providers = daemon.providers.clone();
+        let history = daemon.history.clone();
         let limit = daemon.settings.launcher.max_results;
         let background = cx.background_executor().clone();
         // Replacing the task drops (cancels) the previous, now stale search.
         self.search = Some(cx.spawn_in(window, async move |this, cx| {
-            let items = background.spawn(async move { search_all(&providers, &query, limit) }).await;
+            let items = background
+                .spawn(async move {
+                    let boost = |item: &SearchItem| {
+                        item.action.history_key().map_or(0, |k| history.lock().map_or(0, |h| h.boost(&k)))
+                    };
+                    search_all(&providers, &query, limit, &boost)
+                })
+                .await;
             let _ = this.update_in(cx, |this, window, cx| this.set_items(items, window, cx));
         }));
     }
@@ -211,19 +220,24 @@ impl Launcher {
         let Some(item) = self.items.get(index).cloned() else {
             return;
         };
-        let result = match item.action {
-            ItemAction::CopyText(text) => {
-                cx.write_to_clipboard(ClipboardItem::new_string(text));
-                Ok(())
+        if let Some(key) = item.action.history_key() {
+            cx.global::<Daemon>().record_use(&key);
+        }
+        let result: anyhow::Result<()> = if alternate && let Some(path) = item.action.path() {
+            launch::reveal(path)
+        } else {
+            match &item.action {
+                ItemAction::CopyText(text) => {
+                    cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+                    Ok(())
+                }
+                ItemAction::Open(path) => open::that_detached(path).map_err(Into::into),
+                ItemAction::OpenUrl(url) => open::that_detached(url).map_err(Into::into),
+                ItemAction::Run { program, args, terminal } => launch::run(program, args, *terminal),
             }
-            ItemAction::Open(path) => {
-                let target = if alternate { path.parent().map(|p| p.to_path_buf()).unwrap_or(path) } else { path };
-                open::that_detached(target)
-            }
-            ItemAction::OpenUrl(url) => open::that_detached(url),
         };
         if let Err(e) = result {
-            tracing::warn!("action failed: {e}");
+            tracing::warn!(title = item.title, "action failed: {e:#}");
         }
         close(window, cx);
     }

@@ -1,0 +1,18 @@
+[package]
+name = "yaltri-files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+jwalk.workspace = true
+memchr.workspace = true
+notify.workspace = true
+tracing.workspace = true
+yaltri-core.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[dev-dependencies]

@@ -1,0 +1,15 @@
+[package]
+name = "yaltri-apps"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nucleo-matcher.workspace = true
+shell-words.workspace = true
+tracing.workspace = true
+yaltri-core.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+serde.workspace = true
+serde_json.workspace = true

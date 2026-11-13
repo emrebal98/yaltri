@@ -1,15 +1,17 @@
 //! The long-lived tray process. Owns settings, the tray icon, global hotkeys
 //! and the tool windows; every request arrives as a `Command`.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use futures::StreamExt as _;
 use futures::channel::mpsc;
 use gpui_kit::{App, AnyWindowHandle, Global, QuitMode};
+use yaltri_apps::AppsProvider;
 use yaltri_calc::CalcProvider;
 use yaltri_core::paths::Paths;
-use yaltri_core::{Command, SearchProvider, Settings, ToolId};
+use yaltri_core::{Command, History, SearchProvider, Settings, ToolId};
+use yaltri_files::{FileIndexer, FilesProvider, Scope};
 use yaltri_platform::CommandSender;
 use yaltri_platform::hotkeys::{HotkeyError, Hotkeys};
 use yaltri_platform::session::Session;
@@ -25,11 +27,14 @@ pub struct Daemon {
     pub settings_warning: Option<String>,
     pub hotkey_errors: Vec<HotkeyError>,
     pub providers: Arc<Vec<Box<dyn SearchProvider>>>,
+    pub history: Arc<Mutex<History>>,
     pub launcher_window: Option<AnyWindowHandle>,
     pub settings_window: Option<AnyWindowHandle>,
     tx: CommandSender,
     tray: Option<Tray>,
     hotkeys: Option<Hotkeys>,
+    files: Option<(Scope, FileIndexer)>,
+    apps: Option<Arc<AppsProvider>>,
 }
 
 impl Global for Daemon {}
@@ -49,7 +54,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
         .run(move |cx: &mut App| {
             gpui_kit::init(cx);
 
-            let providers: Vec<Box<dyn SearchProvider>> = vec![Box::new(CalcProvider::new())];
+            let history = History::load(&paths.history_file());
             let mut daemon = Daemon {
                 paths,
                 session,
@@ -58,14 +63,18 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                     .recovered_from
                     .map(|e| format!("Ayar dosyası bozuktu, varsayılanlara dönüldü (yedek: settings.toml.bak): {e}")),
                 hotkey_errors: Vec::new(),
-                providers: Arc::new(providers),
+                providers: Arc::new(Vec::new()),
+                history: Arc::new(Mutex::new(history)),
                 launcher_window: None,
                 settings_window: None,
                 tx: tx.clone(),
                 tray: None,
                 hotkeys: None,
+                files: None,
+                apps: None,
             };
             daemon.start_platform_services();
+            daemon.rebuild_search();
             cx.set_global(daemon);
 
             if let Some(cmd) = initial {
@@ -126,11 +135,64 @@ impl Daemon {
         self.settings = settings;
         self.settings_warning = None;
         self.apply_hotkeys();
+        self.rebuild_search();
         let menu = self.tray_menu();
         if let Some(tray) = self.tray.as_mut() {
             tray.set_menu(menu)?;
         }
         Ok(())
+    }
+}
+
+impl Daemon {
+    /// (Re)creates search sources to match settings. The file indexer is only
+    /// restarted when its scope changed; the apps provider is kept once started.
+    fn rebuild_search(&mut self) {
+        let files = &self.settings.files;
+        if files.files_enabled {
+            let scope = Scope::from_settings(files);
+            if self.files.as_ref().map(|(s, _)| s) != Some(&scope) {
+                self.files = None; // stop the old indexer first
+                tracing::info!(roots = ?scope.roots, "starting file indexer");
+                let indexer = FileIndexer::start(scope.clone(), self.paths.file_index());
+                self.files = Some((scope, indexer));
+            }
+        } else {
+            self.files = None;
+        }
+        if files.apps_enabled && self.apps.is_none() {
+            self.apps = Some(Arc::new(AppsProvider::start()));
+        }
+
+        let mut providers: Vec<Box<dyn SearchProvider>> = vec![Box::new(CalcProvider::new())];
+        if files.apps_enabled
+            && let Some(apps) = &self.apps
+        {
+            providers.push(Box::new(apps.clone()));
+        }
+        if let Some((_, indexer)) = &self.files {
+            providers.push(Box::new(FilesProvider::new(indexer)));
+        }
+        self.providers = Arc::new(providers);
+    }
+
+    pub fn index_status(&self) -> Option<yaltri_files::Status> {
+        self.files.as_ref().map(|(_, i)| i.status())
+    }
+
+    pub fn rescan_files(&self) {
+        if let Some((_, indexer)) = &self.files {
+            indexer.rescan();
+        }
+    }
+
+    /// Remembers that the user opened `key`, for ranking.
+    pub fn record_use(&self, key: &str) {
+        let mut history = self.history.lock().unwrap();
+        history.record(key);
+        if let Err(e) = history.save(&self.paths.history_file()) {
+            tracing::warn!("saving history failed: {e:#}");
+        }
     }
 }
 

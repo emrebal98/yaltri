@@ -11,6 +11,8 @@ license = "MIT"
 yaltri-core = { path = "crates/yaltri-core" }
 yaltri-calc = { path = "crates/yaltri-calc" }
 yaltri-platform = { path = "crates/yaltri-platform" }
+yaltri-files = { path = "crates/yaltri-files" }
+yaltri-apps = { path = "crates/yaltri-apps" }
 
 # GPUI Kit pins the matching gpui-pre snapshot and re-exports GPUI + components.
 # Exact pin: bump deliberately, GPUI is pre-1.0 and breaks between snapshots.
@@ -22,18 +24,28 @@ fend-core = "1.5"
 futures = "0.3"
 global-hotkey = "0.10"
 interprocess = "2.4"
+jwalk = "0.9"
 ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
+memchr = "2.8"
+notify = "8.2"
+nucleo-matcher = "0.3"
 open = "5"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+shell-words = "1.1"
 toml = "1"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tray-icon = "0.26"
-windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# The file index scans millions of names; keep it fast in debug builds too.
+[profile.dev.package.yaltri-files]
+opt-level = 3
 
 [profile.release]
 lto = "thin"

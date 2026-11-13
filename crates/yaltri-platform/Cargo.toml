@@ -8,6 +8,7 @@ license.workspace = true
 anyhow.workspace = true
 futures.workspace = true
 interprocess.workspace = true
+open.workspace = true
 tracing.workspace = true
 yaltri-core.workspace = true
 

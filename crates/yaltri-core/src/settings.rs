@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,7 @@ pub struct Settings {
     pub version: u32,
     pub general: GeneralSettings,
     pub launcher: LauncherSettings,
+    pub files: FilesSettings,
     pub picker: PickerSettings,
 }
 
@@ -35,6 +36,24 @@ pub struct LauncherSettings {
     pub max_results: usize,
 }
 
+/// What the launcher searches besides the calculator.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FilesSettings {
+    /// Index and search files and folders.
+    pub files_enabled: bool,
+    /// Search installed applications (Start Menu / `.desktop` files).
+    pub apps_enabled: bool,
+    /// Folders to index. Empty means every fixed drive on Windows and `/` on
+    /// Linux.
+    pub roots: Vec<PathBuf>,
+    /// Folders skipped entirely, on top of the built-in system folders
+    /// (`C:\Windows`, `/proc`, ...).
+    pub exclude_paths: Vec<PathBuf>,
+    /// Folder names skipped wherever they appear (`node_modules`, `.git`).
+    pub exclude_names: Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PickerSettings {
@@ -48,6 +67,7 @@ impl Default for Settings {
             version: SETTINGS_VERSION,
             general: GeneralSettings::default(),
             launcher: LauncherSettings::default(),
+            files: FilesSettings::default(),
             picker: PickerSettings::default(),
         }
     }
@@ -65,6 +85,20 @@ impl Default for LauncherSettings {
             enabled: true,
             hotkey: "Alt+Space".into(),
             max_results: 8,
+        }
+    }
+}
+
+impl Default for FilesSettings {
+    fn default() -> Self {
+        Self {
+            files_enabled: true,
+            apps_enabled: true,
+            roots: Vec::new(),
+            exclude_paths: Vec::new(),
+            exclude_names: ["node_modules", ".git", "__pycache__", "$RECYCLE.BIN", "System Volume Information"]
+                .map(String::from)
+                .to_vec(),
         }
     }
 }
