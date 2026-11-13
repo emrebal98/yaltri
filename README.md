@@ -25,7 +25,9 @@ Launcher: `↑/↓` seç, `Enter` aç (hesap sonucunu kopyalar), `Ctrl+Enter` kl
 ### Dosya index'i
 
 Everything gibi sadece isimleri RAM'de tutar: ~1,9M dosya ≈ 210 MiB, arama ~8 ms.
-İlk tarama birkaç saniye–dakika sürer; index diske kaydedilir ve sonraki açılışta ~0,1 sn'de yüklenir.
+İlk tarama tüm çekirdeklerle birkaç saniye–dakika sürer; index diske kaydedilir ve sonraki
+açılışta ~0,1 sn'de yüklenir. Sonraki taramalar index'i yeniden kurmaz, diskle karşılaştırıp
+sadece farkları uygular (arka planda 4 thread, tepe bellek ~+35 MiB).
 
 - Windows: tüm sabit diskler taranır, değişiklikler anlık izlenir (`ReadDirectoryChangesW`, yönetici yetkisi gerekmez).
 - Linux: `/` taranır; sadece ev dizini anlık izlenir (inotify limiti), gerisi saatlik yeniden taranır.

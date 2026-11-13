@@ -6,6 +6,7 @@ pub mod index;
 pub mod indexer;
 pub mod persist;
 pub mod provider;
+pub mod reconcile;
 pub mod scan;
 pub mod scope;
 

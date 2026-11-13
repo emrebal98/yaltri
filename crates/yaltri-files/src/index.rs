@@ -5,6 +5,9 @@
 //! lowercase copy (`lower`), each name terminated by `\0`. A search is a single
 //! `memmem` pass over `lower`; each hit's offset maps back to its entry by
 //! binary search, because entries are appended in arena order.
+//!
+//! Arenas are made of fixed 4 MiB chunks rather than one big Vec: growing
+//! never copies (and briefly doubles) a 100 MiB block, it just adds a chunk.
 
 use std::path::{Path, PathBuf};
 
@@ -44,8 +47,61 @@ impl Entry {
     }
 }
 
-/// Grows by ~12.5% instead of Vec's default doubling: after a scan the arenas
-/// are shrunk to size, and one new file must not double a 100 MiB arena.
+const CHUNK_BITS: u32 = 22;
+const CHUNK_SIZE: usize = 1 << CHUNK_BITS;
+
+/// Append-only byte storage in fixed-size chunks. Offsets are
+/// `chunk << CHUNK_BITS | position`, so they increase in push order and a
+/// stored name never spans two chunks.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Arena {
+    pub(crate) chunks: Vec<Vec<u8>>,
+}
+
+impl Arena {
+    /// Appends `bytes` followed by a `\0` and returns its offset.
+    fn push(&mut self, bytes: &[u8]) -> u32 {
+        let needed = bytes.len() + 1;
+        if self.chunks.last().is_none_or(|c| c.len() + needed > CHUNK_SIZE) {
+            self.chunks.push(Vec::with_capacity(CHUNK_SIZE));
+        }
+        let index = self.chunks.len() - 1;
+        let chunk = &mut self.chunks[index];
+        if chunk.capacity() - chunk.len() < needed {
+            // A shrunk last chunk grows straight back to one chunk, never
+            // beyond (Vec doubling could overshoot CHUNK_SIZE).
+            chunk.reserve_exact(CHUNK_SIZE - chunk.len());
+        }
+        let offset = ((index as u32) << CHUNK_BITS) | chunk.len() as u32;
+        chunk.extend_from_slice(bytes);
+        chunk.push(0);
+        offset
+    }
+
+    pub(crate) fn get(&self, offset: u32, len: usize) -> Option<&[u8]> {
+        let chunk = self.chunks.get((offset >> CHUNK_BITS) as usize)?;
+        let start = (offset as usize) & (CHUNK_SIZE - 1);
+        chunk.get(start..start + len)
+    }
+
+    /// `(base offset, bytes)` per chunk.
+    fn chunks(&self) -> impl Iterator<Item = (usize, &[u8])> {
+        self.chunks.iter().enumerate().map(|(i, c)| (i << CHUNK_BITS, c.as_slice()))
+    }
+
+    fn capacity(&self) -> usize {
+        self.chunks.iter().map(Vec::capacity).sum()
+    }
+
+    fn shrink_last(&mut self) {
+        if let Some(last) = self.chunks.last_mut() {
+            last.shrink_to_fit();
+        }
+    }
+}
+
+/// Grows by ~12.5% instead of Vec's default doubling, so one new file does
+/// not double the entry table right after a scan shrank it.
 fn grow<T>(v: &mut Vec<T>, additional: usize) {
     if v.capacity() - v.len() < additional {
         v.reserve_exact((v.capacity() / 8).max(additional).max(1024));
@@ -69,8 +125,8 @@ fn is_noise_dir(name: &str, parent_is_root: bool) -> bool {
 
 #[derive(Clone, Debug, Default)]
 pub struct FileIndex {
-    pub(crate) names: Vec<u8>,
-    pub(crate) lower: Vec<u8>,
+    pub(crate) names: Arena,
+    pub(crate) lower: Arena,
     pub(crate) entries: Vec<Entry>,
     deleted: usize,
 }
@@ -104,7 +160,7 @@ impl FileIndex {
         Self::default()
     }
 
-    pub(crate) fn from_parts(names: Vec<u8>, lower: Vec<u8>, entries: Vec<Entry>) -> Self {
+    pub(crate) fn from_parts(names: Arena, lower: Arena, entries: Vec<Entry>) -> Self {
         let deleted = entries.iter().filter(|e| e.is_deleted()).count();
         Self { names, lower, entries, deleted }
     }
@@ -132,14 +188,10 @@ impl FileIndex {
         // Names longer than u16::MAX bytes do not exist on real filesystems.
         let name = &name[..name.len().min(u16::MAX as usize)];
         let id = self.entries.len() as EntryId;
-        grow(&mut self.names, name.len() + 1);
-        grow(&mut self.lower, name.len() + 1);
         grow(&mut self.entries, 1);
-        let name_off = self.names.len() as u32;
-        self.names.extend_from_slice(name.as_bytes());
-        self.names.push(0);
-        self.lower.extend_from_slice(fold_case(name).as_bytes());
-        self.lower.push(0);
+        let name_off = self.names.push(name.as_bytes());
+        let lower_off = self.lower.push(fold_case(name).as_bytes());
+        debug_assert_eq!(name_off, lower_off, "fold_case keeps byte length");
         self.entries.push(Entry { name_off, parent, name_len: name.len() as u16, flags });
         id
     }
@@ -161,8 +213,8 @@ impl FileIndex {
 
     /// Releases growth slack after a bulk build.
     pub fn shrink_to_fit(&mut self) {
-        self.names.shrink_to_fit();
-        self.lower.shrink_to_fit();
+        self.names.shrink_last();
+        self.lower.shrink_last();
         self.entries.shrink_to_fit();
     }
 
@@ -172,14 +224,14 @@ impl FileIndex {
 
     pub fn name(&self, id: EntryId) -> &str {
         let e = &self.entries[id as usize];
-        let bytes = &self.names[e.name_off as usize..e.name_off as usize + e.name_len as usize];
+        let bytes = self.names.get(e.name_off, e.name_len as usize).unwrap_or_default();
         // Names are pushed from &str, so this never fails.
         std::str::from_utf8(bytes).unwrap_or_default()
     }
 
     fn lower_name(&self, id: EntryId) -> &[u8] {
         let e = &self.entries[id as usize];
-        &self.lower[e.name_off as usize..e.name_off as usize + e.name_len as usize]
+        self.lower.get(e.name_off, e.name_len as usize).unwrap_or_default()
     }
 
     pub fn mark_deleted(&mut self, id: EntryId) {
@@ -247,7 +299,9 @@ impl FileIndex {
 
         let mut scored: Vec<(u32, EntryId)> = Vec::new();
         let mut last: Option<EntryId> = None;
-        for offset in memmem::find_iter(&self.lower, first) {
+        let finder = memmem::Finder::new(first);
+        let offsets = self.lower.chunks().flat_map(|(base, chunk)| finder.find_iter(chunk).map(move |m| base + m));
+        for offset in offsets {
             let id = self.entry_at_offset(offset);
             if last == Some(id) {
                 continue;
@@ -404,13 +458,19 @@ mod tests {
     fn growth_after_shrink_is_bounded() {
         let mut idx = FileIndex::new();
         let root = idx.add_root(Path::new("/r"));
-        for i in 0..100_000 {
-            idx.push(root, &format!("file-{i}.txt"), false);
+        // ~15 MB of names: several chunks per arena.
+        for i in 0..600_000 {
+            idx.push(root, &format!("some-file-name-{i}.txt"), false);
         }
+        assert!(idx.names.chunks.len() >= 3);
         idx.shrink_to_fit();
         let before = idx.memory_bytes();
         idx.push(root, "one-more.txt", false);
-        assert!(idx.memory_bytes() < before + before / 4, "{before} -> {}", idx.memory_bytes());
+        // At most: last chunk of each arena refilled + 12.5% entry growth.
+        let limit = before + 2 * CHUNK_SIZE + idx.entries.len() * size_of::<Entry>() / 8 + 4096;
+        assert!(idx.memory_bytes() <= limit, "{before} -> {}", idx.memory_bytes());
+        assert!(idx.names.chunks.iter().all(|c| c.capacity() <= CHUNK_SIZE));
+        assert_eq!(idx.search("some-file-name-599999", 1, &no_boost).len(), 1);
     }
 
     #[test]

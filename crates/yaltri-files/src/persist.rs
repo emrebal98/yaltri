@@ -1,7 +1,8 @@
 //! On-disk snapshot of the index so startup does not wait for a full walk.
 //!
 //! Layout (little endian): magic, version, scope fingerprint, then the
-//! `names` and `lower` arenas and the packed entries. A mismatch in any
+//! `names` and `lower` arenas (chunk count, then length + bytes per chunk)
+//! and the packed entries. A mismatch in any
 //! header field means "rebuild".
 
 use std::fs::{self, File};
@@ -10,10 +11,13 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
-use crate::index::{Entry, FileIndex};
+use crate::index::{Arena, Entry, FileIndex};
 
 const MAGIC: &[u8; 8] = b"YALTRIDX";
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
+/// Sanity limits for a corrupt header (offsets are u32: 1024 x 4 MiB).
+const MAX_CHUNKS: usize = 1024;
+const MAX_CHUNK_BYTES: usize = 4 << 20;
 const ENTRY_BYTES: usize = 11;
 
 pub fn save(index: &FileIndex, fingerprint: u64, path: &Path) -> Result<()> {
@@ -27,8 +31,11 @@ pub fn save(index: &FileIndex, fingerprint: u64, path: &Path) -> Result<()> {
         w.write_all(&VERSION.to_le_bytes())?;
         w.write_all(&fingerprint.to_le_bytes())?;
         for arena in [&index.names, &index.lower] {
-            w.write_all(&(arena.len() as u64).to_le_bytes())?;
-            w.write_all(arena)?;
+            w.write_all(&(arena.chunks.len() as u32).to_le_bytes())?;
+            for chunk in &arena.chunks {
+                w.write_all(&(chunk.len() as u64).to_le_bytes())?;
+                w.write_all(chunk)?;
+            }
         }
         w.write_all(&(index.entries.len() as u64).to_le_bytes())?;
         for e in &index.entries {
@@ -59,7 +66,8 @@ pub fn load(path: &Path, fingerprint: u64) -> Result<FileIndex> {
     }
     let names = read_arena(&mut r)?;
     let lower = read_arena(&mut r)?;
-    if names.len() != lower.len() {
+    let lens = |a: &Arena| a.chunks.iter().map(Vec::len).collect::<Vec<_>>();
+    if lens(&names) != lens(&lower) {
         bail!("corrupt index: arena mismatch");
     }
     let count = read_u64(&mut r)? as usize;
@@ -74,8 +82,10 @@ pub fn load(path: &Path, fingerprint: u64) -> Result<FileIndex> {
             name_len: u16::from_le_bytes(chunk[8..10].try_into()?),
             flags: chunk[10],
         };
-        let end = e.name_off as usize + e.name_len as usize;
-        if e.name_off < prev_off || end >= names.len() || std::str::from_utf8(&names[e.name_off as usize..end]).is_err() {
+        let valid = e.name_off >= prev_off
+            && names.get(e.name_off, e.name_len as usize + 1).is_some()
+            && names.get(e.name_off, e.name_len as usize).is_some_and(|b| std::str::from_utf8(b).is_ok());
+        if !valid {
             bail!("corrupt index: bad entry");
         }
         prev_off = e.name_off;
@@ -96,16 +106,22 @@ fn read_u64(r: &mut impl Read) -> Result<u64> {
     Ok(u64::from_le_bytes(b))
 }
 
-fn read_arena(r: &mut impl Read) -> Result<Vec<u8>> {
-    let len = read_u64(r)? as usize;
-    // Guard against absurd sizes from a corrupt header (4 GiB arena limit:
-    // offsets are u32).
-    if len > u32::MAX as usize {
-        bail!("corrupt index: arena too large");
+fn read_arena(r: &mut impl Read) -> Result<Arena> {
+    let count = read_u32(r)? as usize;
+    if count > MAX_CHUNKS {
+        bail!("corrupt index: too many chunks");
     }
-    let mut v = vec![0u8; len];
-    r.read_exact(&mut v)?;
-    Ok(v)
+    let mut chunks = Vec::with_capacity(count);
+    for _ in 0..count {
+        let len = read_u64(r)? as usize;
+        if len > MAX_CHUNK_BYTES {
+            bail!("corrupt index: chunk too large");
+        }
+        let mut chunk = vec![0u8; len];
+        r.read_exact(&mut chunk)?;
+        chunks.push(chunk);
+    }
+    Ok(Arena { chunks })
 }
 
 #[cfg(test)]

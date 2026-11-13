@@ -37,18 +37,7 @@ pub fn full_scan(scope: &Scope, control: &ScanControl) -> FileIndex {
 
 /// Recursively adds everything below `dir` (already present as `dir_id`).
 pub fn walk_into(index: &mut FileIndex, dir_id: EntryId, dir: &Path, scope: &Scope, control: &ScanControl) {
-    let filter = Arc::new(scope.clone());
-    let walker = WalkDir::new(dir)
-        .skip_hidden(false)
-        .follow_links(false)
-        .sort(false)
-        .min_depth(1)
-        .process_read_dir(move |_, _, _, children| {
-            children.retain(|child| match child {
-                Ok(e) => !(e.file_type.is_dir() && filter.excludes(&e.path())),
-                Err(_) => false,
-            });
-        });
+    let walker = walker(dir, scope, Speed::Fast);
 
     // jwalk yields depth-first, parents before children; `stack[d]` is the
     // most recent directory seen at depth `d` (depth 0 = `dir` itself).
@@ -73,6 +62,39 @@ pub fn walk_into(index: &mut FileIndex, dir_id: EntryId, dir: &Path, scope: &Sco
             stack.push(id);
         }
     }
+}
+
+/// How many threads read directories during a walk.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Speed {
+    /// Every core: the user is waiting (first index build).
+    Fast,
+    /// A few threads: background rescans. jwalk yields results in order and
+    /// buffers whatever it read ahead, so fewer threads also bound memory
+    /// (measured on 1.9M files: +34 MiB at 4 threads vs +147 MiB at 12).
+    Background,
+}
+
+/// Parallel depth-first walk below `dir` (not including `dir`), skipping
+/// excluded folders, never following links.
+pub(crate) fn walker(dir: &Path, scope: &Scope, speed: Speed) -> WalkDir {
+    let filter = Arc::new(scope.clone());
+    let walk = WalkDir::new(dir);
+    let walk = match speed {
+        Speed::Fast => walk,
+        Speed::Background => walk.parallelism(jwalk::Parallelism::RayonNewPool(4)),
+    };
+    walk
+        .skip_hidden(false)
+        .follow_links(false)
+        .sort(false)
+        .min_depth(1)
+        .process_read_dir(move |_, _, _, children| {
+            children.retain(|child| match child {
+                Ok(e) => !(e.file_type.is_dir() && filter.excludes(&e.path())),
+                Err(_) => false,
+            });
+        })
 }
 
 /// Re-reads one directory's immediate children and reconciles them with the
