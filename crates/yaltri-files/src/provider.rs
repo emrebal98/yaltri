@@ -45,6 +45,7 @@ impl SearchProvider for FilesProvider {
                     provider: "files",
                     score: hit.score,
                     action: ItemAction::Open(hit.path),
+                    icon: None,
                 }
             })
             .collect()

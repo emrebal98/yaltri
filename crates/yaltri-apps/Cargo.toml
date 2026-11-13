@@ -11,5 +11,7 @@ tracing.workspace = true
 yaltri-core.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+image.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+windows.workspace = true

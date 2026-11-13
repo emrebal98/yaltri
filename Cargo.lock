@@ -8803,11 +8803,13 @@ dependencies = [
 name = "yaltri-apps"
 version = "0.1.0"
 dependencies = [
+ "image",
  "nucleo-matcher",
  "serde",
  "serde_json",
  "shell-words",
  "tracing",
+ "windows 0.62.2",
  "yaltri-core",
 ]
 

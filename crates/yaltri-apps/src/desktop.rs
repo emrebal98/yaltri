@@ -145,6 +145,7 @@ pub fn application_dirs() -> Vec<PathBuf> {
 /// Reads every visible application. Earlier directories shadow later ones
 /// with the same desktop-file id (`sub/foo.desktop` -> `sub-foo.desktop`).
 pub fn discover(dirs: &[PathBuf], locale: Option<&str>, desktops: &[String]) -> Vec<App> {
+    let icon_bases = crate::icons::icon_bases();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut apps = Vec::new();
     for dir in dirs {
@@ -163,11 +164,16 @@ pub fn discover(dirs: &[PathBuf], locale: Option<&str>, desktops: &[String]) -> 
             let Some((program, args)) = entry.exec.as_deref().and_then(parse_exec) else { continue };
             let mut keywords = entry.keywords;
             keywords.extend(entry.generic_name);
+            let icon = entry
+                .icon
+                .as_deref()
+                .and_then(|name| crate::icons::find_theme_icon(name, &icon_bases, &crate::icons::THEMES));
             apps.push(App {
                 name: entry.name,
                 keywords,
                 location: path.display().to_string(),
                 action: ItemAction::Run { program, args, terminal: entry.terminal },
+                icon,
             });
         }
     }

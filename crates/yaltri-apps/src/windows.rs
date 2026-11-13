@@ -58,6 +58,7 @@ fn collect(dir: &Path, out: &mut Vec<App>) {
             keywords: Vec::new(),
             location: path.parent().map(|p| p.display().to_string()).unwrap_or_default(),
             action: ItemAction::Open(path),
+            icon: None,
         });
     }
 }
@@ -109,6 +110,7 @@ fn parse_start_apps(json: &str) -> Vec<App> {
             action: ItemAction::OpenUrl(format!("shell:AppsFolder\\{}", a.app_id)),
             name: a.name,
             keywords: Vec::new(),
+            icon: None,
         })
         .collect()
 }

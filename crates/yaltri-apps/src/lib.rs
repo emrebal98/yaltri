@@ -2,10 +2,12 @@
 //! `.desktop` files on Linux. Fuzzy-matched by name and keywords.
 
 pub mod desktop;
+pub mod icons;
 #[cfg(windows)]
 mod windows;
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
@@ -26,6 +28,7 @@ pub struct App {
     /// Where it was found, shown as the subtitle.
     pub location: String,
     pub action: ItemAction,
+    pub icon: Option<PathBuf>,
 }
 
 /// Every app currently installed, de-duplicated by name.
@@ -45,6 +48,20 @@ pub fn discover() -> Vec<App> {
     dedupe(apps)
 }
 
+/// Fills `icon` for apps that do not have one yet.
+#[cfg_attr(not(windows), allow(unused_variables))]
+fn attach_icons(apps: &mut [App], icon_cache: &std::path::Path) {
+    #[cfg(windows)]
+    for app in apps.iter_mut().filter(|a| a.icon.is_none()) {
+        let parsing_name = match &app.action {
+            ItemAction::Open(path) => path.to_string_lossy().into_owned(),
+            ItemAction::OpenUrl(url) => url.clone(),
+            _ => continue,
+        };
+        app.icon = icons::icon_for(&parsing_name, icon_cache);
+    }
+}
+
 fn dedupe(apps: Vec<App>) -> Vec<App> {
     let mut seen = HashSet::new();
     apps.into_iter().filter(|a| seen.insert(a.name.to_lowercase())).collect()
@@ -57,13 +74,20 @@ pub struct AppsProvider {
 
 impl AppsProvider {
     /// Discovers apps in the background now and every few minutes.
-    pub fn start() -> Self {
+    /// `icon_cache` holds extracted icons (Windows).
+    pub fn start(icon_cache: PathBuf) -> Self {
         let apps: Arc<RwLock<Vec<App>>> = Arc::default();
         let shared = apps.clone();
         let _ = thread::Builder::new().name("yaltri-apps".into()).spawn(move || {
             loop {
-                let found = discover();
+                let mut found = discover();
                 tracing::info!(count = found.len(), "applications discovered");
+                // Publish right away; icons follow (first run extracts them).
+                *shared.write().unwrap() = found.clone();
+                let started = std::time::Instant::now();
+                attach_icons(&mut found, &icon_cache);
+                let with_icon = found.iter().filter(|a| a.icon.is_some()).count();
+                tracing::info!(with_icon, took = ?started.elapsed(), "application icons ready");
                 *shared.write().unwrap() = found;
                 thread::sleep(REFRESH_EVERY);
             }
@@ -144,6 +168,7 @@ fn item(app: &App, score: u32) -> SearchItem {
         provider: "apps",
         score,
         action: app.action.clone(),
+        icon: app.icon.clone(),
     }
 }
 
@@ -163,6 +188,7 @@ mod tests {
             keywords: keywords.iter().map(|k| k.to_string()).collect(),
             location: String::new(),
             action: ItemAction::OpenUrl(name.into()),
+            icon: None,
         }
     }
 

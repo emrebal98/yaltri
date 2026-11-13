@@ -47,7 +47,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
     yaltri_platform::ipc::serve(tx.clone())?;
 
     gpui_kit::application()
-        .with_assets(gpui_kit::assets::Assets)
+        .with_assets(crate::assets::YaltriAssets)
         // Tray app: GPUI's default on Windows/Linux quits when the last
         // window closes. Only `Command::Quit` may end the process.
         .with_quit_mode(QuitMode::Explicit)
@@ -161,7 +161,7 @@ impl Daemon {
             self.files = None;
         }
         if files.apps_enabled && self.apps.is_none() {
-            self.apps = Some(Arc::new(AppsProvider::start()));
+            self.apps = Some(Arc::new(AppsProvider::start(self.paths.data_dir.join("icons"))));
         }
 
         let mut providers: Vec<Box<dyn SearchProvider>> = vec![Box::new(CalcProvider::new())];

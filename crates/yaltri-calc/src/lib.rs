@@ -56,6 +56,7 @@ impl SearchProvider for CalcProvider {
                 subtitle: format!("{} — Enter ile kopyala", query.trim()),
                 provider: "calc",
                 score: SCORE,
+                icon: None,
             })
             .into_iter()
             .collect()

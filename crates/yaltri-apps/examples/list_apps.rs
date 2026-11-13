@@ -10,7 +10,7 @@ fn main() {
         println!("  {} — {:?}", a.name, a.action);
     }
     if let Some(q) = std::env::args().nth(1) {
-        let p = yaltri_apps::AppsProvider::start();
+        let p = yaltri_apps::AppsProvider::start(std::env::temp_dir().join("yaltri-icon-example"));
         while p.count() == 0 { std::thread::sleep(std::time::Duration::from_millis(100)); }
         for item in p.query(&q) {
             println!("{q:?} -> {} ({})", item.title, item.score);

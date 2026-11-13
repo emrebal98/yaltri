@@ -48,6 +48,8 @@ pub struct SearchItem {
     /// results from all providers by this score.
     pub score: u32,
     pub action: ItemAction,
+    /// Image file (PNG/SVG) shown next to the result.
+    pub icon: Option<PathBuf>,
 }
 
 /// A source of launcher results. Implementations must be cheap to call
@@ -109,6 +111,7 @@ mod tests {
                     provider: self.0,
                     score,
                     action: ItemAction::CopyText(String::new()),
+                    icon: None,
                 })
                 .collect()
         }

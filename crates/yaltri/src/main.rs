@@ -1,6 +1,7 @@
 // Release builds are tray apps: no console window on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod assets;
 mod daemon;
 mod launcher;
 mod settings_view;

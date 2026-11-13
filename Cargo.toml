@@ -23,6 +23,7 @@ directories = "6"
 fend-core = "1.5"
 futures = "0.3"
 global-hotkey = "0.10"
+image = { version = "0.25", default-features = false, features = ["png"] }
 interprocess = "2.4"
 jwalk = "0.9"
 ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
@@ -38,6 +39,7 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tray-icon = "0.26"
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_UI_Shell"] }
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
 
 [profile.dev.package."*"]

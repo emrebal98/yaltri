@@ -2,10 +2,12 @@
 //! driven. Opened fresh on each toggle and destroyed when dismissed.
 
 use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::assets::IconName;
 use gpui_kit::component::{ActiveTheme as _, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Bounds, ClipboardItem, Context, Entity, InteractiveElement as _,
+    AnyWindowHandle, App, AppContext as _, Bounds, ClipboardItem, Context, Entity, Hsla, InteractiveElement as _,
+    ObjectFit, StyledImage as _, img,
     IntoElement, KeystrokeEvent, ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _,
     Subscription, Task, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div,
     point, px, size,
@@ -243,6 +245,24 @@ impl Launcher {
     }
 }
 
+const ICON_SIZE: f32 = 28.;
+
+/// The app's own icon when we have one, otherwise a symbol for the kind of
+/// result (calculator, folder, file, app).
+fn item_icon(item: &SearchItem, tint: Hsla) -> impl IntoElement {
+    let slot = div().size(px(ICON_SIZE)).flex_shrink_0().flex().items_center().justify_center();
+    if let Some(path) = &item.icon {
+        return slot.child(img(path.clone()).size(px(ICON_SIZE)).object_fit(ObjectFit::Contain));
+    }
+    let symbol = match (&item.action, item.provider) {
+        (_, "calc") => IconName::Calculator,
+        (_, "apps") => IconName::AppWindow,
+        (ItemAction::Open(_), _) if item.subtitle.starts_with("Klasör") => IconName::Folder,
+        _ => IconName::File,
+    };
+    slot.text_size(px(20.)).text_color(tint).child(symbol)
+}
+
 impl Render for Launcher {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
@@ -253,14 +273,23 @@ impl Render for Launcher {
                 .h(px(ROW_HEIGHT))
                 .px_3()
                 .flex()
-                .flex_col()
-                .justify_center()
+                .items_center()
+                .gap_3()
                 .rounded(theme.radius)
                 .cursor_pointer()
                 .when(selected, |row| row.bg(theme.list_active))
                 .when(!selected, |row| row.hover(|row| row.bg(theme.list_hover)))
-                .child(div().text_base().text_color(theme.foreground).child(item.title.clone()))
-                .child(div().text_xs().text_color(theme.muted_foreground).child(item.subtitle.clone()))
+                .child(item_icon(item, theme.muted_foreground))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .min_w_0()
+                        .child(div().text_base().text_color(theme.foreground).truncate().child(item.title.clone()))
+                        .child(
+                            div().text_xs().text_color(theme.muted_foreground).truncate().child(item.subtitle.clone()),
+                        ),
+                )
                 .on_click(cx.listener(move |this, _, window, cx| this.accept(ix, false, window, cx)))
         });
 
