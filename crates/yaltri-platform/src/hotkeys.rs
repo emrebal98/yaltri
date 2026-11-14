@@ -2,7 +2,9 @@
 //! keys; there the user binds `yaltri toggle <tool>` in their desktop settings.
 //!
 //! On Windows the manager must be created on the thread that runs the message
-//! loop (GPUI's main thread).
+//! loop (GPUI's main thread). Combinations Windows refuses to register
+//! (reserved by the shell or owned by another program) fall back to a
+//! low-level keyboard hook, see `hookkeys`.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -19,6 +21,11 @@ pub struct Hotkeys {
     manager: GlobalHotKeyManager,
     registered: Vec<HotKey>,
     by_id: Arc<Mutex<HashMap<u32, ToolId>>>,
+    #[cfg(windows)]
+    tx: CommandSender,
+    /// Started on first use; serves the shortcuts registration refused.
+    #[cfg(windows)]
+    hook: Option<crate::hookkeys::HookThread>,
 }
 
 /// Why a tool's shortcut is not active.
@@ -33,6 +40,8 @@ impl Hotkeys {
         let manager = GlobalHotKeyManager::new().map_err(|e| anyhow!("global hotkeys unavailable: {e}"))?;
         let by_id: Arc<Mutex<HashMap<u32, ToolId>>> = Arc::default();
         let lookup = by_id.clone();
+        #[cfg(windows)]
+        let hook_tx = tx.clone();
         GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
             if event.state != HotKeyState::Pressed {
                 return;
@@ -42,7 +51,15 @@ impl Hotkeys {
                 let _ = tx.unbounded_send(Command::Toggle(tool));
             }
         }));
-        Ok(Self { manager, registered: Vec::new(), by_id })
+        Ok(Self {
+            manager,
+            registered: Vec::new(),
+            by_id,
+            #[cfg(windows)]
+            tx: hook_tx,
+            #[cfg(windows)]
+            hook: None,
+        })
     }
 
     /// Replaces all registrations with `bindings`. Returns the bindings that
@@ -55,32 +72,73 @@ impl Hotkeys {
         }
         let mut map = HashMap::new();
         let mut errors = Vec::new();
+        #[cfg(windows)]
+        let mut hooked: Vec<(crate::hookkeys::Combo, ToolId)> = Vec::new();
         for (tool, spec) in bindings {
             if spec.trim().is_empty() {
                 continue;
             }
-            let result = parse(spec).and_then(|hk| {
-                self.manager.register(hk).map(|()| hk).map_err(|e| {
-                    tracing::debug!(%e, "register failed");
-                    anyhow!("{spec} başka bir uygulama tarafından kullanılıyor (ör. PowerToys). Orada kapatırsanız Yaltri otomatik devralır; ya da farklı bir kısayol seçin.")
-                })
-            });
-            match result {
-                Ok(hk) => {
+            let hk = match parse(spec) {
+                Ok(hk) => hk,
+                Err(e) => {
+                    errors.push(HotkeyError { tool: *tool, message: e.to_string() });
+                    continue;
+                }
+            };
+            match self.manager.register(hk) {
+                Ok(()) => {
                     tracing::info!(%tool, spec, "hotkey registered");
                     map.insert(hk.id(), *tool);
                     self.registered.push(hk);
                 }
                 Err(e) => {
-                    tracing::debug!(%tool, spec, %e, "hotkey failed");
-                    errors.push(HotkeyError { tool: *tool, message: e.to_string() });
+                    tracing::debug!(%tool, spec, %e, "RegisterHotKey refused");
+                    #[cfg(windows)]
+                    if let Some(combo) = crate::hookkeys::combo_from_spec(spec) {
+                        tracing::info!(%tool, spec, "shortcut is reserved elsewhere; using keyboard hook");
+                        hooked.push((combo, *tool));
+                        continue;
+                    }
+                    errors.push(HotkeyError {
+                        tool: *tool,
+                        message: format!("{spec} başka bir program veya Windows tarafından kullanılıyor. Farklı bir kısayol seçin."),
+                    });
                 }
             }
         }
         if let Ok(mut by_id) = self.by_id.lock() {
             *by_id = map;
         }
+        #[cfg(windows)]
+        self.set_hooked(hooked, &mut errors);
         errors
+    }
+
+    #[cfg(windows)]
+    fn set_hooked(&mut self, hooked: Vec<(crate::hookkeys::Combo, ToolId)>, errors: &mut Vec<HotkeyError>) {
+        if hooked.is_empty() {
+            if let Some(hook) = &self.hook {
+                hook.set_bindings(Vec::new());
+            }
+            return;
+        }
+        if self.hook.is_none() {
+            match crate::hookkeys::HookThread::start(self.tx.clone()) {
+                Ok(h) => self.hook = Some(h),
+                Err(e) => {
+                    tracing::warn!("keyboard hook unavailable: {e:#}");
+                    errors.extend(hooked.iter().map(|(_, tool)| HotkeyError {
+                        tool: *tool,
+                        message: "Bu kısayol başka bir program veya Windows tarafından kullanılıyor. Farklı bir kısayol seçin."
+                            .into(),
+                    }));
+                    return;
+                }
+            }
+        }
+        if let Some(hook) = &self.hook {
+            hook.set_bindings(hooked);
+        }
     }
 }
 

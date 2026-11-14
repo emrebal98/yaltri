@@ -2,6 +2,8 @@
 //! single-instance IPC and session detection. Every event source funnels into
 //! one `Command` channel that the app drains on its main thread.
 
+#[cfg(windows)]
+pub mod hookkeys;
 pub mod hotkeys;
 mod icon;
 pub mod ipc;
