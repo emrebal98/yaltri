@@ -74,6 +74,7 @@ fn open(cx: &mut App) {
         let input = view.read(cx).input.clone();
         input.update(cx, |input, cx| input.focus(window, cx));
         window.activate_window();
+        ui::focus_popup(window);
         view
     });
     match result {
@@ -589,6 +590,7 @@ impl Render for Launcher {
             self.framed_dark = Some(p.dark);
             ui::frame_popup(window, p);
         }
+        ui::round_corners(window, R_LG);
 
         // Open: fade in and slide down 4 px; close: fade out.
         let (opacity, dy) = match self.closing {

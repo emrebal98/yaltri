@@ -5,7 +5,9 @@
 //!   Left click opens search, right click the menu.
 //! - Linux: `ksni` (StatusNotifierItem over D-Bus, own thread, no GTK). GNOME
 //!   shows it through the AppIndicator extension Ubuntu ships by default and
-//!   opens the menu on any click; menu icons are dropped there.
+//!   opens the menu on any click. That extension draws menu icons but ignores
+//!   the dbusmenu `shortcut` property, so on GNOME the shortcut goes into the
+//!   label instead.
 
 use anyhow::Result;
 use yaltri_core::{Command, ToolId};
@@ -187,17 +189,26 @@ mod imp {
         }
         fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
             use ksni::menu::StandardItem;
+            let gnome = is_gnome();
+            // Shell menus follow the panel, which we assume dark.
+            let ink = if crate::icon::taskbar_is_light() { "#17181B" } else { "#ECEDEF" };
+            let column = self.menu.iter().flatten().filter(|e| e.shortcut.is_some()).map(|e| e.label.chars().count()).max().unwrap_or(0);
             self.menu
                 .iter()
                 .map(|entry| match entry {
                     None => ksni::MenuItem::Separator,
                     Some(e) => {
                         let cmd = e.command;
+                        let shortcut = e.shortcut.as_deref().filter(|s| !s.is_empty());
                         StandardItem {
-                            label: e.label.clone(),
+                            label: if gnome { label_with_shortcut(&e.label, shortcut, column) } else { e.label.clone() },
+                            icon_data: e
+                                .icon_svg
+                                .and_then(|svg| crate::icon::svg_png(svg, 16, Some(ink)))
+                                .unwrap_or_default(),
                             // dbusmenu wants [["Control", "Alt", "Space"]].
-                            shortcut: e
-                                .shortcut
+                            shortcut: shortcut
+                                .filter(|_| !gnome)
                                 .iter()
                                 .map(|spec| {
                                     spec.split('+')
@@ -221,6 +232,24 @@ mod imp {
         }
     }
 
+    fn is_gnome() -> bool {
+        std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.split(':').any(|d| d.eq_ignore_ascii_case("gnome")))
+    }
+
+    /// Label with the shortcut after it, for menus that ignore `shortcut`.
+    /// The shell font is proportional and a tab is one space wide there, so
+    /// the shortcuts line up only roughly: a space is about half a letter,
+    /// so pad two spaces per letter short of the longest label (`column`).
+    pub(super) fn label_with_shortcut(label: &str, shortcut: Option<&str>, column: usize) -> String {
+        match shortcut {
+            Some(s) => {
+                let pad = 4 + 2 * column.saturating_sub(label.chars().count());
+                format!("{label}{}{s}", " ".repeat(pad))
+            }
+            None => label.to_owned(),
+        }
+    }
+
     impl Tray {
         pub fn spawn(tx: CommandSender, menu: Vec<Option<MenuEntry>>) -> Result<Self> {
             let handle =
@@ -236,5 +265,21 @@ mod imp {
         pub fn refresh_theme(&mut self) -> Result<()> {
             Ok(())
         }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::imp::label_with_shortcut;
+
+    #[test]
+    fn appends_the_shortcut_only_when_set() {
+        assert_eq!(label_with_shortcut("Search", Some("Ctrl+Alt+Space"), 6), "Search    Ctrl+Alt+Space");
+        assert_eq!(label_with_shortcut("Settings", None, 12), "Settings");
+    }
+
+    #[test]
+    fn pads_shorter_labels_toward_the_longest() {
+        assert_eq!(label_with_shortcut("Ab", Some("X"), 4), format!("Ab{}X", " ".repeat(8)));
     }
 }

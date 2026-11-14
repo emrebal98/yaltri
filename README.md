@@ -63,7 +63,7 @@ printf '[Desktop Entry]\nType=Application\nName=Yaltri\nExec=%s\n' "$HOME/.local
 
 | Shortcut | Action |
 |---|---|
-| `Super+Space` | Open search |
+| `Super+Shift+F` | Open search |
 | `Super+Shift+C` | Open the color picker |
 
 Change shortcuts in the **Settings** window (right-click the tray icon → Settings).

@@ -224,6 +224,7 @@ impl ColorEditor {
             .border_r_1()
             .border_t_1()
             .border_color(p.border)
+            .rounded_bl(px(ui::FRAME_INNER_RADIUS))
             .bg(p.background)
             .children(history.iter().copied().enumerate().map(|(ix, c)| {
                 div()
@@ -466,11 +467,15 @@ impl ColorEditor {
             d.px(px(14.)).when(on, |d| d.shadow(ring(p.surface, p.accent_strong)))
         };
         div()
+            .id("confirm-scrim")
             .absolute()
             .top(px(ui::TITLEBAR_HEIGHT))
             .left_0()
             .right_0()
             .bottom_0()
+            // Keeps clicks and hovers from reaching the editor behind it.
+            .occlude()
+            .rounded_b(px(ui::FRAME_INNER_RADIUS))
             .bg(p.scrim())
             .flex()
             .items_center()
@@ -530,6 +535,7 @@ impl Render for ColorEditor {
             .pt(px(16.))
             .px(px(20.))
             .pb(px(16.))
+            .rounded_br(px(ui::FRAME_INNER_RADIUS))
             .bg(p.surface)
             .border_t_1()
             .border_color(p.border)

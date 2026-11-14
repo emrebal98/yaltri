@@ -232,11 +232,15 @@ pub fn sync_components(cx: &mut App) {
     theme.mono_font_family = mono_font();
     theme.radius = px(R_SM);
     theme.radius_lg = px(R_LG);
+    // Linux tool windows: the library draws the frame, shadow and corners
+    // around our content (`ui::window_frame` adds no second border).
+    theme.window_radius = px(R_WINDOW);
     let colors = &mut theme.colors;
     colors.background = p.background;
     colors.foreground = p.foreground;
     colors.muted_foreground = p.muted;
     colors.border = p.border;
+    colors.window_border = p.border;
     colors.input = p.border;
     colors.ring = p.accent_strong;
     colors.caret = p.accent_strong;

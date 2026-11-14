@@ -37,6 +37,11 @@ impl Paths {
         self.data_dir.join("files.idx")
     }
 
+    /// GNOME shortcuts Yaltri took over, to give back (Linux).
+    pub fn gnome_shortcuts_file(&self) -> PathBuf {
+        self.data_dir.join("gnome-shortcuts.json")
+    }
+
     pub fn log_dir(&self) -> PathBuf {
         self.data_dir.join("logs")
     }

@@ -26,7 +26,7 @@ use crate::color_editor;
 use crate::daemon::Daemon;
 use crate::picker_zoom::{self as zoom, Capture};
 use crate::theme::{self, Palette};
-use crate::ui::TextStyle as _;
+use crate::ui::{self, TextStyle as _};
 
 /// Offset of the color label from the cursor.
 const BOX_OFFSET: f32 = 16.;
@@ -95,6 +95,7 @@ fn open_overlays(cx: &mut App) {
             let client_origin = client_origin(window).unwrap_or(display_origin);
             let view = cx.new(|cx| PickerOverlay::new(shot, display_origin, client_origin, size, scale, window, cx));
             window.activate_window();
+            ui::focus_popup(window);
             view
         });
         match opened {

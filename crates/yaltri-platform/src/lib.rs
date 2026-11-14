@@ -7,16 +7,20 @@ pub mod hookkeys;
 #[cfg(windows)]
 pub mod powertoys;
 pub mod autostart;
+#[cfg(target_os = "linux")]
+pub mod gnome_keys;
 pub mod hotkeys;
 pub mod icon;
 pub mod ipc;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub mod keygrab;
 pub mod keys;
 pub mod launch;
 pub mod screen;
 pub mod session;
 pub mod tray;
+#[cfg(target_os = "linux")]
+pub mod x11;
 
 use futures::channel::mpsc::UnboundedSender;
 use yaltri_core::Command;

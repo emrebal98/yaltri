@@ -45,6 +45,10 @@ pub struct Daemon {
     hotkeys: Option<Hotkeys>,
     /// True while a shortcut is being recorded in settings.
     hotkeys_suspended: bool,
+    /// GNOME desktops: our shortcuts live there as custom shortcuts (see
+    /// `gnome_keys`), plus the specs last applied. `None` elsewhere.
+    #[cfg(target_os = "linux")]
+    gnome: Option<(yaltri_platform::gnome_keys::GnomeKeys, Option<Vec<String>>)>,
     files: Option<(Scope, FileIndexer)>,
     apps: Option<Arc<AppsProvider>>,
 }
@@ -79,6 +83,9 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
 
             let history = History::load(&paths.history_file());
             let colors = ColorHistory::load(&paths.colors_file());
+            #[cfg(target_os = "linux")]
+            let gnome = yaltri_platform::gnome_keys::available()
+                .then(|| (yaltri_platform::gnome_keys::GnomeKeys::load(paths.gnome_shortcuts_file()), None));
             let mut daemon = Daemon {
                 paths,
                 session,
@@ -98,6 +105,8 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 tray_apps_light: yaltri_platform::icon::apps_use_light_theme(),
                 hotkeys: None,
                 hotkeys_suspended: false,
+                #[cfg(target_os = "linux")]
+                gnome,
                 files: None,
                 apps: None,
             };
@@ -144,7 +153,9 @@ impl Daemon {
             Ok(t) => self.tray = Some(t),
             Err(e) => tracing::error!("tray unavailable: {e:#}"),
         }
-        if self.session.supports_global_hotkeys() {
+        if self.uses_gnome_shortcuts() {
+            tracing::info!("shortcuts go through GNOME custom shortcuts");
+        } else if self.session.supports_global_hotkeys() {
             match Hotkeys::new(self.tx.clone()) {
                 Ok(h) => self.hotkeys = Some(h),
                 Err(e) => tracing::error!("{e:#}"),
@@ -175,7 +186,7 @@ impl Daemon {
                     ToolId::Picker => "pipette",
                 };
                 let spec = self.settings.hotkey(tool);
-                let shortcut = (!spec.is_empty() && self.session.supports_global_hotkeys())
+                let shortcut = (!spec.is_empty() && (self.session.supports_global_hotkeys() || self.uses_gnome_shortcuts()))
                     .then(|| yaltri_platform::keys::display_parts(spec).join("+"));
                 entry(crate::settings_view::tool_name(tool), Command::Toggle(tool), icon, shortcut)
             })
@@ -216,16 +227,65 @@ impl Daemon {
         }
     }
 
+    /// GNOME: shortcuts are GNOME custom shortcuts, not our own grabs.
+    fn uses_gnome_shortcuts(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        return self.gnome.is_some();
+        #[cfg(not(target_os = "linux"))]
+        false
+    }
+
     fn apply_hotkeys(&mut self) {
-        let Some(hotkeys) = self.hotkeys.as_mut() else {
-            return;
-        };
         let bindings: Vec<(ToolId, String)> = ToolId::ALL
             .into_iter()
             .filter(|t| self.settings.is_enabled(*t) && is_implemented(*t))
             .map(|t| (t, self.settings.hotkey(t).to_owned()))
+            .filter(|(_, spec)| !spec.trim().is_empty())
             .collect();
+        #[cfg(target_os = "linux")]
+        if let Some(errors) = self.apply_gnome_shortcuts(&bindings) {
+            self.set_hotkey_errors(errors);
+            return;
+        }
+        let Some(hotkeys) = self.hotkeys.as_mut() else {
+            return;
+        };
         let errors = hotkeys.apply(&bindings);
+        self.set_hotkey_errors(errors);
+    }
+
+    /// GNOME: frees `bindings` from GNOME's own shortcuts and sets them up as
+    /// custom shortcuts running `yaltri toggle <tool>`. `None` off GNOME.
+    #[cfg(target_os = "linux")]
+    fn apply_gnome_shortcuts(&mut self, bindings: &[(ToolId, String)]) -> Option<Vec<HotkeyError>> {
+        let (gnome, applied) = self.gnome.as_mut()?;
+        let specs: Vec<String> = bindings.iter().map(|(_, spec)| spec.clone()).collect();
+        if applied.as_ref() == Some(&specs) {
+            return Some(self.hotkey_errors.clone());
+        }
+        let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "yaltri".into());
+        let exe = if exe.contains([' ', '\'', '"']) { format!("'{}'", exe.replace('\'', "'\\''")) } else { exe };
+        let gnome_bindings: Vec<_> = bindings
+            .iter()
+            .map(|(tool, spec)| yaltri_platform::gnome_keys::Binding {
+                id: tool.to_string(),
+                name: format!("Yaltri: {}", crate::settings_view::tool_name(*tool)),
+                spec: spec.clone(),
+                command: format!("{exe} toggle {tool}"),
+            })
+            .collect();
+        let failed = gnome.apply(&gnome_bindings);
+        let errors: Vec<HotkeyError> = bindings
+            .iter()
+            .filter(|(tool, _)| failed.contains(&tool.to_string()))
+            .map(|(tool, _)| HotkeyError { tool: *tool, kind: yaltri_platform::hotkeys::HotkeyErrorKind::InUse })
+            .collect();
+        // Failures are retried by `retry_failed_hotkeys`.
+        *applied = errors.is_empty().then_some(specs);
+        Some(errors)
+    }
+
+    fn set_hotkey_errors(&mut self, errors: Vec<HotkeyError>) {
         if errors != self.hotkey_errors {
             for e in &errors {
                 tracing::warn!(tool = %e.tool, kind = ?e.kind, "shortcut problem");
@@ -391,6 +451,10 @@ fn handle(cmd: Command, cx: &mut App) {
         Command::Settings => settings_view::open(cx),
         Command::Quit => {
             tracing::info!("quit requested");
+            #[cfg(target_os = "linux")]
+            if let Some((gnome, _)) = cx.global_mut::<Daemon>().gnome.as_mut() {
+                gnome.restore_all();
+            }
             cx.quit();
         }
     }

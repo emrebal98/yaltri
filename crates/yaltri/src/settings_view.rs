@@ -984,6 +984,7 @@ impl Render for SettingsView {
             .justify_end()
             .border_t_1()
             .border_color(p.border)
+            .rounded_b(px(ui::FRAME_INNER_RADIUS))
             .bg(p.background)
             .child(
                 ui::button("save", ButtonKind::Primary, p)
