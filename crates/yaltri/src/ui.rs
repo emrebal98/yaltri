@@ -304,6 +304,39 @@ pub fn titlebar(title: SharedString, p: &Palette) -> Stateful<Div> {
         )
 }
 
+/// Records an element's window bounds while it is painted (add it as a child
+/// of the element). Dropdowns use this to attach to their trigger.
+pub fn track_bounds<V: 'static>(
+    view: gpui_kit::WeakEntity<V>,
+    store: impl Fn(&mut V, gpui_kit::Bounds<gpui_kit::Pixels>) + 'static,
+) -> impl IntoElement {
+    gpui_kit::canvas(
+        move |bounds, _, cx| {
+            let _ = view.update(cx, |view, _| store(view, bounds));
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
+/// A dropdown list right under `trigger`, left-aligned with it. It moves
+/// above the trigger when it does not fit below, and always stays 8 px
+/// inside the window.
+pub fn dropdown(trigger: gpui_kit::Bounds<gpui_kit::Pixels>, body: impl IntoElement) -> impl IntoElement {
+    gpui_kit::deferred(
+        gpui_kit::anchored()
+            .attach(trigger, gpui_kit::Anchor::BottomLeft)
+            .anchor(gpui_kit::Anchor::TopLeft)
+            .offset(gpui_kit::point(px(0.), px(4.)))
+            .snap_to_window_with_margin(px(8.))
+            .child(body),
+    )
+    .with_priority(1)
+}
+
 /// Context menu box; add `menu_item`s and `menu_separator`s.
 pub fn menu_box(p: &Palette) -> Div {
     div()

@@ -6,9 +6,9 @@ use std::time::{Duration, SystemTime};
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Div, Entity, FontWeight, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window, anchored,
-    deferred, div, img, px,
+    AnyElement, App, AppContext as _, Bounds, Context, Div, Entity, FontWeight, InteractiveElement as _, IntoElement,
+    MouseDownEvent, ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Task, Window, div, img, px,
 };
 use yaltri_apps::games::Launcher;
 use yaltri_color::Format;
@@ -71,6 +71,12 @@ pub struct SettingsView {
     picker_open_editor: bool,
     copy_format: Format,
     format_menu: bool,
+    /// Where the dropdown triggers were last painted.
+    format_trigger: Option<Bounds<Pixels>>,
+    language_trigger: Option<Bounds<Pixels>>,
+    /// The real OS startup entry, read when the window opens.
+    autostart: bool,
+    autostart_error: Option<SharedString>,
     /// `general.language`: "auto", "tr", "en".
     language: String,
     language_menu: bool,
@@ -118,6 +124,10 @@ impl SettingsView {
             picker_open_editor: settings.picker.open_editor,
             copy_format: settings.picker.copy_format.parse().unwrap_or(Format::Hex),
             format_menu: false,
+            format_trigger: None,
+            language_trigger: None,
+            autostart: yaltri_platform::autostart::is_enabled(),
+            autostart_error: None,
             language: settings.general.language.clone(),
             language_menu: false,
             theme: ThemeChoice::from_key(&settings.general.theme),
@@ -220,6 +230,28 @@ impl SettingsView {
             return;
         }
         self.flash(false, t("settings.saved").into(), cx);
+    }
+
+    /// Writes or removes the OS startup entry. On failure the switch stays
+    /// as it was and the error shows under the row.
+    fn set_autostart(&mut self, on: bool, cx: &mut Context<Self>) {
+        match yaltri_platform::autostart::set_enabled(on) {
+            Ok(()) => {
+                self.autostart = yaltri_platform::autostart::is_enabled();
+                self.autostart_error = None;
+                // Keep the config in step (the OS entry stays the truth).
+                let daemon = cx.global_mut::<Daemon>();
+                let mut settings = daemon.settings.clone();
+                settings.general.start_with_system = on;
+                if let Err(e) = daemon.update_settings(settings) {
+                    tracing::warn!("saving start_with_system failed: {e:#}");
+                }
+            }
+            Err(e) => {
+                self.autostart_error = Some(tf("settings.general.autostart_failed", &[("error", &format!("{e:#}"))]).into());
+            }
+        }
+        cx.notify();
     }
 
     /// Master switch: applies right away so the shortcut is (un)registered.
@@ -548,6 +580,7 @@ impl SettingsView {
 
     fn general_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
         // Each language in its own name; "auto" follows the OS locale.
+        let autostart = self.autostart;
         let languages: [(&str, &str); 3] =
             [("auto", t("settings.general.language.system")), ("tr", "Türkçe"), ("en", "English")];
         let current = languages.iter().find(|(key, _)| *key == self.language).map_or(languages[0].1, |(_, name)| *name);
@@ -575,20 +608,22 @@ impl SettingsView {
                         this.save(cx);
                     }))
             });
-            deferred(
-                anchored().snap_to_window().child(
-                    ui::menu_box(p)
-                        .mt(px(36.))
-                        .min_w(px(160.))
-                        .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+            let trigger = self.language_trigger?;
+            Some(ui::dropdown(
+                trigger,
+                ui::menu_box(p)
+                    .min_w(trigger.size.width)
+                    .on_mouse_down_out(cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                        // A click on the trigger toggles it instead.
+                        if !trigger.contains(&e.position) {
                             this.language_menu = false;
                             cx.notify();
-                        }))
-                        .children(items),
-                ),
-            )
-            .with_priority(1)
-        });
+                        }
+                    }))
+                    .children(items),
+            ))
+        })
+        .flatten();
         let language_button = div()
             .relative()
             .flex_none()
@@ -610,6 +645,7 @@ impl SettingsView {
                     .hover(|s| s.border_color(p.border_strong))
                     .child(div().truncate().child(current))
                     .child(ui::icon("chevron-down", 14., p.muted))
+                    .child(ui::track_bounds(cx.weak_entity(), |this: &mut Self, b| this.language_trigger = Some(b)))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.language_menu = !this.language_menu;
                         cx.notify();
@@ -640,7 +676,21 @@ impl SettingsView {
             .border_1()
             .border_color(p.border)
             .child(
-                setting_row(56., true, t("settings.general.language"), Some(t("settings.general.language_hint")), p)
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        setting_row(56., true, t("settings.general.autostart"), Some(t("settings.general.autostart_hint")), p)
+                            .child(ui::switch("autostart", autostart, p).on_click(cx.listener(move |this, _, _, cx| {
+                                this.set_autostart(!autostart, cx)
+                            }))),
+                    )
+                    .when_some(self.autostart_error.clone(), |d, e| {
+                        d.child(div().pb(px(12.)).ts(12., 16.).text_color(p.danger).child(e))
+                    }),
+            )
+            .child(
+                setting_row(56., false, t("settings.general.language"), Some(t("settings.general.language_hint")), p)
                     .child(language_button),
             )
             .child(
@@ -683,20 +733,21 @@ impl SettingsView {
                         cx.notify();
                     }))
             });
-            deferred(
-                anchored().snap_to_window().child(
-                    ui::menu_box(p)
-                        .mt(px(36.))
-                        .min_w(px(140.))
-                        .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+            let trigger = self.format_trigger?;
+            Some(ui::dropdown(
+                trigger,
+                ui::menu_box(p)
+                    .min_w(trigger.size.width)
+                    .on_mouse_down_out(cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                        if !trigger.contains(&e.position) {
                             this.format_menu = false;
                             cx.notify();
-                        }))
-                        .children(items),
-                ),
-            )
-            .with_priority(1)
-        });
+                        }
+                    }))
+                    .children(items),
+            ))
+        })
+        .flatten();
 
         let open_editor = self.picker_open_editor;
         let format_button = div().relative().flex_none().child(
@@ -718,6 +769,7 @@ impl SettingsView {
                 .hover(|s| s.border_color(p.border_strong))
                 .child(self.copy_format.label())
                 .child(ui::icon("chevron-down", 14., p.muted))
+                .child(ui::track_bounds(cx.weak_entity(), |this: &mut Self, b| this.format_trigger = Some(b)))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.format_menu = !this.format_menu;
                     cx.notify();

@@ -109,7 +109,7 @@ impl Default for Settings {
 
 impl Default for GeneralSettings {
     fn default() -> Self {
-        Self { start_with_system: false, language: "auto".into(), theme: "system".into() }
+        Self { start_with_system: true, language: "auto".into(), theme: "system".into() }
     }
 }
 

@@ -56,7 +56,11 @@ const HOTKEY_RETRY: Duration = Duration::from_secs(20);
 const THEME_POLL: Duration = Duration::from_secs(5);
 
 pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<()> {
+    let first_run = !paths.settings_file().exists();
     let loaded = Settings::load(&paths.settings_file())?;
+    if first_run {
+        first_run_setup(&loaded.settings, &paths);
+    }
     let (tx, mut rx) = mpsc::unbounded::<Command>();
 
     // Bind the IPC socket before the UI so a racing second instance sees us.
@@ -343,6 +347,19 @@ impl Daemon {
         if let Err(e) = history.save(&self.paths.history_file()) {
             tracing::warn!("saving history failed: {e:#}");
         }
+    }
+}
+
+/// First start (no settings file yet): apply defaults that live outside the
+/// settings file, then write the file so this runs only once.
+fn first_run_setup(settings: &Settings, paths: &Paths) {
+    if settings.general.start_with_system
+        && let Err(e) = yaltri_platform::autostart::set_enabled(true)
+    {
+        tracing::warn!("enabling autostart failed: {e:#}");
+    }
+    if let Err(e) = settings.save(&paths.settings_file()) {
+        tracing::warn!("writing default settings failed: {e:#}");
     }
 }
 
