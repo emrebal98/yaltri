@@ -4,8 +4,9 @@
 //! - the first scroll-up freezes a 50x50 physical-pixel patch around the
 //!   cursor; the square stays centered on that point
 //! - four levels, factor 1x/2x/4x/8x, so the square is 50-400 logical px
-//! - once a cell is at least 4 px, a pixel grid is drawn whose lines are
-//!   black on light pixels, white on dark ones, fading towards the edges
+//! - once a cell is at least 4 px, a pixel grid appears in a small circle
+//!   around the pointer: black lines on light pixels, white on dark ones,
+//!   fading out towards the circle's edge
 //! - the cell under the pointer is outlined and its color is what gets shown
 //!   and picked
 
@@ -17,6 +18,8 @@ pub const BASE: usize = 50;
 pub const MAX_LEVEL: usize = 4;
 /// Grid lines appear once a cell is this many logical pixels wide.
 const GRID_MIN_CELL: f32 = 4.;
+/// Radius of the grid circle around the pointer, logical px.
+pub const GRID_RADIUS: f32 = 56.;
 
 /// Magnification at `level` (1..=MAX_LEVEL).
 pub fn factor(level: usize) -> f32 {
@@ -66,42 +69,64 @@ fn is_light(c: Rgb) -> bool {
     0.299 * c.r as f32 + 0.587 * c.g as f32 + 0.114 * c.b as f32 > 140.
 }
 
-/// BGRA image of the patch at `physical_side` pixels, nearest-neighbor, with
-/// the grid baked in when `grid` is set. Rendered once per zoom level.
-pub fn render(capture: &Capture, physical_side: u32, grid: bool) -> Vec<u8> {
+/// BGRA image of the patch at `physical_side` pixels, nearest-neighbor.
+/// Rendered once per zoom level.
+pub fn render(capture: &Capture, physical_side: u32) -> Vec<u8> {
     let n = physical_side as usize;
     let cell = physical_side as f32 / BASE as f32;
-    let center = physical_side as f32 / 2.;
-    let max_dist = (2f32).sqrt() * center;
     let mut out = vec![0u8; n * n * 4];
     for y in 0..n {
         let row = ((y as f32 / cell) as usize).min(BASE - 1);
-        let on_row_edge = grid && y == (row as f32 * cell).floor() as usize;
         for x in 0..n {
             let col = ((x as f32 / cell) as usize).min(BASE - 1);
             let c = capture.at(col, row);
-            let mut px = [c.b as f32, c.g as f32, c.r as f32];
-            if grid && (on_row_edge || x == (col as f32 * cell).floor() as usize) {
-                let (mx, my) = ((col as f32 + 0.5) * cell, (row as f32 + 0.5) * cell);
-                let fade = 1. - ((mx - center).powi(2) + (my - center).powi(2)).sqrt() / max_dist;
-                if fade > 0.05 {
-                    let alpha = fade.clamp(0., 1.) * 160. / 255.;
-                    let line = if is_light(c) { 0. } else { 255. };
-                    for ch in &mut px {
-                        *ch = *ch * (1. - alpha) + line * alpha;
-                    }
-                }
-            }
             let i = (y * n + x) * 4;
-            out[i..i + 4].copy_from_slice(&[px[0] as u8, px[1] as u8, px[2] as u8, 255]);
+            out[i..i + 4].copy_from_slice(&[c.b, c.g, c.r, 255]);
         }
     }
     out
 }
 
-/// Whether the grid is drawn at `level`.
-pub fn has_grid(level: usize) -> bool {
-    side(level) / BASE as f32 >= GRID_MIN_CELL
+/// One grid line segment (a cell's left or top edge), relative to the
+/// square's top-left, in logical px.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GridLine {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    /// Black line (on a light pixel) or white (on a dark one).
+    pub black: bool,
+    /// 0..=160/255, fading with distance from the pointer.
+    pub alpha: f32,
+}
+
+/// Grid segments for the cells within `GRID_RADIUS` of `pointer` (relative
+/// to the square's top-left). Empty when cells are too small for a grid.
+pub fn grid_near(capture: &Capture, side: f32, pointer: (f32, f32)) -> Vec<GridLine> {
+    let cell = side / BASE as f32;
+    if cell < GRID_MIN_CELL {
+        return Vec::new();
+    }
+    let reach = (GRID_RADIUS / cell).ceil() as i32 + 1;
+    let (pc, pr) = ((pointer.0 / cell) as i32, (pointer.1 / cell) as i32);
+    let mut lines = Vec::new();
+    for row in (pr - reach).max(0)..=(pr + reach).min(BASE as i32 - 1) {
+        for col in (pc - reach).max(0)..=(pc + reach).min(BASE as i32 - 1) {
+            let (mx, my) = ((col as f32 + 0.5) * cell, (row as f32 + 0.5) * cell);
+            let dist = ((mx - pointer.0).powi(2) + (my - pointer.1).powi(2)).sqrt();
+            let fade = 1. - dist / GRID_RADIUS;
+            if fade <= 0.05 {
+                continue;
+            }
+            let alpha = fade.clamp(0., 1.) * 160. / 255.;
+            let black = is_light(capture.at(col as usize, row as usize));
+            let (x, y) = (col as f32 * cell, row as f32 * cell);
+            lines.push(GridLine { x, y, w: 1., h: cell, black, alpha });
+            lines.push(GridLine { x, y, w: cell, h: 1., black, alpha });
+        }
+    }
+    lines
 }
 
 /// Eased size during the 200 ms resize between levels: sine ease-out when
@@ -130,8 +155,6 @@ mod tests {
     #[test]
     fn levels_match_powertoys() {
         assert_eq!([side(1), side(2), side(3), side(4)], [50., 100., 200., 400.]);
-        assert!(!has_grid(1) && !has_grid(2));
-        assert!(has_grid(3) && has_grid(4));
     }
 
     #[test]
@@ -153,20 +176,41 @@ mod tests {
     }
 
     #[test]
-    fn render_is_nearest_neighbor_with_grid_on_edges() {
+    fn render_is_nearest_neighbor() {
         let c = Capture::from_shot(&shot(), 100, 100);
         let side = 400; // 8 px cells
-        let plain = render(&c, side, false);
-        let gridded = render(&c, side, true);
-        let at = |img: &[u8], x: usize, y: usize| {
+        let img = render(&c, side);
+        let at = |x: usize, y: usize| {
             let i = (y * side as usize + x) * 4;
             [img[i + 2], img[i + 1], img[i]]
         };
-        // Inside a cell: exactly the source pixel, with or without grid.
-        assert_eq!(at(&plain, 203, 203), [100, 100, 0]);
-        assert_eq!(at(&gridded, 203, 203), [100, 100, 0]);
-        // A cell's top-left edge pixel is tinted by the grid near the center.
-        assert_ne!(at(&gridded, 200, 203), at(&plain, 200, 203));
+        assert_eq!(at(200, 200), [100, 100, 0]);
+        assert_eq!(at(207, 207), [100, 100, 0], "same cell");
+        assert_eq!(at(208, 200), [101, 100, 0], "next cell");
+    }
+
+    #[test]
+    fn grid_is_a_small_fading_circle_around_the_pointer() {
+        let c = Capture::from_shot(&shot(), 100, 100);
+        let side = super::side(4); // 400 px, 8 px cells
+        let pointer = (100., 300.);
+        let lines = grid_near(&c, side, pointer);
+        assert!(!lines.is_empty());
+        let dist = |l: &GridLine| ((l.x - pointer.0).powi(2) + (l.y - pointer.1).powi(2)).sqrt();
+        // Nothing far from the pointer: it is not a full-square grid.
+        assert!(lines.iter().all(|l| dist(l) <= GRID_RADIUS + 8. * 1.5), "outside circle");
+        assert!(lines.len() < 2 * 15 * 15, "{} segments", lines.len());
+        // Strongest near the pointer.
+        let near = lines.iter().min_by(|a, b| dist(a).total_cmp(&dist(b))).unwrap();
+        let far = lines.iter().max_by(|a, b| dist(a).total_cmp(&dist(b))).unwrap();
+        assert!(near.alpha > far.alpha);
+    }
+
+    #[test]
+    fn no_grid_for_small_cells() {
+        let c = Capture::from_shot(&shot(), 100, 100);
+        assert!(grid_near(&c, super::side(2), (50., 50.)).is_empty());
+        assert!(!grid_near(&c, super::side(3), (100., 100.)).is_empty());
     }
 
     #[test]

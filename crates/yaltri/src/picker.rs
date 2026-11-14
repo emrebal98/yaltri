@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Context, CursorStyle, InteractiveElement as _, IntoElement,
+    AnyWindowHandle, App, AppContext as _, Context, InteractiveElement as _, IntoElement,
     KeystrokeEvent, MouseButton, MouseDownEvent, MouseMoveEvent, ObjectFit, ParentElement as _, Pixels, Point,
     Render, RenderImage, ScrollEvent, Styled as _, StyledImage as _, Subscription, Window, WindowBounds,
     WindowKind, WindowOptions, div, img, px, rgb,
@@ -196,7 +196,7 @@ impl Loupe {
 
 fn loupe_image(capture: &Capture, level: usize, scale: f32) -> Arc<RenderImage> {
     let physical = (zoom::side(level) * scale).round().max(1.) as u32;
-    let bgra = zoom::render(capture, physical, zoom::has_grid(level));
+    let bgra = zoom::render(capture, physical);
     let frame = image::RgbaImage::from_raw(physical, physical, bgra).map(image::Frame::new).expect("square buffer");
     Arc::new(RenderImage::new(vec![frame]))
 }
@@ -353,7 +353,7 @@ impl PickerOverlay {
         let left = loupe.center.x.as_f32() - side / 2.;
         let top = loupe.center.y.as_f32() - side / 2.;
 
-        // Pointer highlight only once the size settled (cells are stable).
+        // Grid circle and pointer highlight only once the size settled.
         let highlight = (!loupe.animating())
             .then_some(self.cursor)
             .flatten()
@@ -362,7 +362,18 @@ impl PickerOverlay {
                 let cell = side / zoom::BASE as f32;
                 let color = loupe.capture.at(col, row);
                 let ring = if color.is_dark() { gpui_kit::white() } else { gpui_kit::black() };
-                vec![
+                let pointer = (cursor.x.as_f32() - left, cursor.y.as_f32() - top);
+                let grid = zoom::grid_near(&loupe.capture, side, pointer).into_iter().map(|l| {
+                    let base = if l.black { gpui_kit::black() } else { gpui_kit::white() };
+                    div()
+                        .absolute()
+                        .left(px(LOUPE_CHROME + l.x))
+                        .top(px(LOUPE_CHROME + l.y))
+                        .w(px(l.w))
+                        .h(px(l.h))
+                        .bg(base.opacity(l.alpha))
+                });
+                grid.chain([
                     div()
                         .absolute()
                         .left(px(LOUPE_CHROME + col as f32 * cell))
@@ -376,7 +387,8 @@ impl PickerOverlay {
                         .top(px(cursor.y.as_f32() - top + LOUPE_CHROME - 2.))
                         .size(px(4.))
                         .bg(fill(color)),
-                ]
+                ])
+                .collect::<Vec<_>>()
             })
             .unwrap_or_default();
 
@@ -467,7 +479,6 @@ impl Render for PickerOverlay {
             .size_full()
             .relative()
             .overflow_hidden()
-            .cursor(CursorStyle::Crosshair)
             .on_mouse_move(cx.listener(Self::on_move))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_click))
             .on_mouse_down(MouseButton::Right, cx.listener(|_, _, _, cx| finish(None, cx)))
