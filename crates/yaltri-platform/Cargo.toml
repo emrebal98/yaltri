@@ -18,5 +18,7 @@ tray-icon.workspace = true
 windows-sys.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+ashpd.workspace = true
 global-hotkey.workspace = true
+x11rb.workspace = true
 ksni.workspace = true

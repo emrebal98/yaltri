@@ -62,7 +62,7 @@ impl Hotkeys {
             let result = parse(spec).and_then(|hk| {
                 self.manager.register(hk).map(|()| hk).map_err(|e| {
                     tracing::debug!(%e, "register failed");
-                    anyhow!("{spec} başka bir uygulama tarafından kullanılıyor (ör. PowerToys Run). Farklı bir kısayol seçin.")
+                    anyhow!("{spec} başka bir uygulama tarafından kullanılıyor (ör. PowerToys). Farklı bir kısayol seçin.")
                 })
             });
             match result {

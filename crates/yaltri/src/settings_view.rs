@@ -27,7 +27,7 @@ pub fn open(cx: &mut App) {
     }
 
     let options = WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(560.), px(680.)), cx))),
+        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(560.), px(720.)), cx))),
         titlebar: Some(TitlebarOptions { title: Some("Yaltri Ayarları".into()), ..Default::default() }),
         app_id: Some("yaltri".into()),
         ..Default::default()
@@ -52,6 +52,7 @@ pub struct SettingsView {
     rows: Vec<ToolRow>,
     files_enabled: bool,
     apps_enabled: bool,
+    picker_open_editor: bool,
     /// Feedback from the last save, or startup warnings. (`is_error`, text)
     status: Option<(bool, SharedString)>,
     /// Re-renders once a second so the index status stays live.
@@ -90,6 +91,7 @@ impl SettingsView {
             rows,
             files_enabled: settings.files.files_enabled,
             apps_enabled: settings.files.apps_enabled,
+            picker_open_editor: settings.picker.open_editor,
             status,
             _refresh: refresh,
         }
@@ -109,6 +111,7 @@ impl SettingsView {
         }
         settings.files.files_enabled = self.files_enabled;
         settings.files.apps_enabled = self.apps_enabled;
+        settings.picker.open_editor = self.picker_open_editor;
         if let Some((a, b)) = settings.hotkey_conflicts().first() {
             self.status = Some((
                 true,
@@ -234,6 +237,17 @@ impl Render for SettingsView {
                         .child(div().w(px(80.)).text_sm().text_color(theme.muted_foreground).child("Kısayol"))
                         .child(div().flex_1().child(Input::new(&row.hotkey))),
                 )
+                .when(row.tool == ToolId::Picker, |d| {
+                    d.child(
+                        Switch::new("picker-editor")
+                            .label("Seçimden sonra editörü aç")
+                            .checked(self.picker_open_editor)
+                            .on_change(cx.listener(|this, value: &bool, _, cx| {
+                                this.picker_open_editor = *value;
+                                cx.notify();
+                            })),
+                    )
+                })
                 .when(session.is_wayland() && implemented, |d| {
                     d.child(div().text_xs().text_color(theme.muted_foreground).child(format!(
                         "Wayland: bu kısayol uygulanamaz. Masaüstü ayarlarında özel kısayol olarak \
@@ -287,12 +301,14 @@ impl Render for SettingsView {
                             .items_center()
                             .justify_between()
                             .gap_2()
-                            .child(div().flex_1().text_xs().text_color(theme.muted_foreground).child(index_text))
+                            .child(div().flex_1().min_w_0().text_xs().text_color(theme.muted_foreground).child(index_text))
                             .child(
-                                Button::new("rescan")
-                                    .outline()
-                                    .label("Yeniden tara")
-                                    .on_click(cx.listener(|_, _, _, cx| cx.global::<Daemon>().rescan_files())),
+                                div().flex_shrink_0().child(
+                                    Button::new("rescan")
+                                        .outline()
+                                        .label("Yeniden tara")
+                                        .on_click(cx.listener(|_, _, _, cx| cx.global::<Daemon>().rescan_files())),
+                                ),
                             ),
                     ),
             )

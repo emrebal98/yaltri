@@ -8788,12 +8788,14 @@ dependencies = [
  "anyhow",
  "futures",
  "gpui-kit",
+ "image",
  "open",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
  "yaltri-apps",
  "yaltri-calc",
+ "yaltri-color",
  "yaltri-core",
  "yaltri-files",
  "yaltri-platform",
@@ -8819,6 +8821,16 @@ version = "0.1.0"
 dependencies = [
  "fend-core",
  "yaltri-core",
+]
+
+[[package]]
+name = "yaltri-color"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "toml 1.2.1+spec-1.1.0",
+ "tracing",
 ]
 
 [[package]]
@@ -8850,6 +8862,7 @@ name = "yaltri-platform"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ashpd",
  "futures",
  "global-hotkey",
  "interprocess",
@@ -8858,6 +8871,7 @@ dependencies = [
  "tracing",
  "tray-icon",
  "windows-sys 0.61.2",
+ "x11rb",
  "yaltri-core",
 ]
 

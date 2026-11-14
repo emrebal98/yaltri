@@ -13,12 +13,14 @@ yaltri-calc = { path = "crates/yaltri-calc" }
 yaltri-platform = { path = "crates/yaltri-platform" }
 yaltri-files = { path = "crates/yaltri-files" }
 yaltri-apps = { path = "crates/yaltri-apps" }
+yaltri-color = { path = "crates/yaltri-color" }
 
 # GPUI Kit pins the matching gpui-pre snapshot and re-exports GPUI + components.
 # Exact pin: bump deliberately, GPUI is pre-1.0 and breaks between snapshots.
 gpui-kit = "=0.9.1"
 
 anyhow = "1"
+ashpd = { version = "0.13", default-features = false, features = ["async-io", "screenshot"] }
 directories = "6"
 fend-core = "1.5"
 futures = "0.3"
@@ -39,8 +41,9 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tray-icon = "0.26"
+x11rb = "0.13"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_UI_Shell"] }
-windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem", "Win32_Graphics_Gdi"] }
 
 [profile.dev.package."*"]
 opt-level = 2

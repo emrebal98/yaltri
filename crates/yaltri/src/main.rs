@@ -2,8 +2,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod assets;
+mod color_editor;
 mod daemon;
 mod launcher;
+mod picker;
 mod settings_view;
 
 use std::process::ExitCode;

@@ -6,9 +6,10 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use futures::StreamExt as _;
 use futures::channel::mpsc;
-use gpui_kit::{App, AnyWindowHandle, Global, QuitMode};
+use gpui_kit::{App, AnyWindowHandle, Entity, Global, QuitMode};
 use yaltri_apps::AppsProvider;
 use yaltri_calc::CalcProvider;
+use yaltri_color::{ColorHistory, Rgb};
 use yaltri_core::paths::Paths;
 use yaltri_core::{Command, History, SearchProvider, Settings, ToolId};
 use yaltri_files::{FileIndexer, FilesProvider, Scope};
@@ -17,7 +18,8 @@ use yaltri_platform::hotkeys::{HotkeyError, Hotkeys};
 use yaltri_platform::session::Session;
 use yaltri_platform::tray::{self, Tray};
 
-use crate::{launcher, settings_view};
+use crate::color_editor::ColorEditor;
+use crate::{launcher, picker, settings_view};
 
 pub struct Daemon {
     pub paths: Paths,
@@ -30,6 +32,11 @@ pub struct Daemon {
     pub history: Arc<Mutex<History>>,
     pub launcher_window: Option<AnyWindowHandle>,
     pub settings_window: Option<AnyWindowHandle>,
+    /// One overlay per display while picking a color.
+    pub picker_windows: Vec<AnyWindowHandle>,
+    pub colors: ColorHistory,
+    pub color_editor: Option<Entity<ColorEditor>>,
+    pub color_editor_window: Option<AnyWindowHandle>,
     tx: CommandSender,
     tray: Option<Tray>,
     hotkeys: Option<Hotkeys>,
@@ -55,6 +62,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
             gpui_kit::init(cx);
 
             let history = History::load(&paths.history_file());
+            let colors = ColorHistory::load(&paths.colors_file());
             let mut daemon = Daemon {
                 paths,
                 session,
@@ -67,6 +75,10 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 history: Arc::new(Mutex::new(history)),
                 launcher_window: None,
                 settings_window: None,
+                picker_windows: Vec::new(),
+                colors,
+                color_editor: None,
+                color_editor_window: None,
                 tx: tx.clone(),
                 tray: None,
                 hotkeys: None,
@@ -186,6 +198,20 @@ impl Daemon {
         }
     }
 
+    pub fn record_color(&mut self, color: Rgb) {
+        self.colors.push(color);
+        if let Err(e) = self.colors.save(&self.paths.colors_file()) {
+            tracing::warn!("saving colors failed: {e:#}");
+        }
+    }
+
+    pub fn forget_color(&mut self, color: Rgb) {
+        self.colors.remove(color);
+        if let Err(e) = self.colors.save(&self.paths.colors_file()) {
+            tracing::warn!("saving colors failed: {e:#}");
+        }
+    }
+
     /// Remembers that the user opened `key`, for ranking.
     pub fn record_use(&self, key: &str) {
         let mut history = self.history.lock().unwrap();
@@ -196,9 +222,9 @@ impl Daemon {
     }
 }
 
-/// Tools that have a UI yet. The picker is planned for milestone 2.
+/// Tools that have a UI. All of them, for now; new tools start here as false.
 pub fn is_implemented(tool: ToolId) -> bool {
-    matches!(tool, ToolId::Launcher)
+    matches!(tool, ToolId::Launcher | ToolId::Picker)
 }
 
 fn handle(cmd: Command, cx: &mut App) {
@@ -210,7 +236,9 @@ fn handle(cmd: Command, cx: &mut App) {
             }
         }
         Command::Toggle(ToolId::Picker) => {
-            tracing::info!("color picker is not implemented yet");
+            if cx.global::<Daemon>().settings.picker.enabled {
+                picker::toggle(cx);
+            }
         }
         Command::Settings => settings_view::open(cx),
         Command::Quit => {

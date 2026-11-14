@@ -8,7 +8,7 @@ Windows, Ubuntu ve Arch üzerinde aynı görünüm için [GPUI](https://gpui.rs)
 | Launcher: hesap makinesi + birim çevirme | ✅ |
 | Launcher: uygulama arama (Start Menu + Store / `.desktop`) | ✅ |
 | Launcher: dosya/klasör arama (kendi index'imiz, Everything gerekmez) | ✅ |
-| Renk seçici | planlandı |
+| Renk seçici (büyüteç, 8 format, geçmiş, tonlar) | ✅ |
 
 ## Kullanım
 
@@ -21,6 +21,17 @@ yaltri quit
 
 Launcher: `↑/↓` seç, `Enter` aç (hesap sonucunu kopyalar), `Ctrl+Enter` klasörde göster, `Esc` kapat.
 Örnek girdiler: `2^10`, `5 km to mi`, `=pi`, `code`, `cargo toml`. Sık açılanlar üste çıkar.
+
+### Renk seçici
+
+`yaltri toggle picker` (varsayılan kısayol `Win+Shift+C`; PowerToys açıksa çakışır, ayarlardan değiştirin).
+İmleç yanında büyüteç ve renk kodu görünür: tekerlek yakınlaştırır, sol tık seçer ve panoya kopyalar,
+sağ tık / `Esc` iptal eder. Seçimden sonra editör açılır: geçmiş (sağ tık siler), açık/koyu tonlar,
+HEX · RGB · HSL · HSV · CMYK · HWB · Decimal · Float. ★ ile seçimde kopyalanacak format belirlenir.
+
+- Windows / X11: masaüstü görüntüsü alınır, her ekranda dondurulmuş haliyle gösterilir.
+- Wayland (GNOME, KDE, Hyprland): ekran okunamadığı için masaüstünün kendi seçicisi
+  (`xdg-desktop-portal` PickColor) açılır, sonuç aynı editöre gelir.
 
 ### Dosya index'i
 
@@ -72,8 +83,9 @@ crates/
   yaltri-calc/      fend-core tabanlı hesap sağlayıcısı
   yaltri-files/     dosya index'i: paralel tarama, kompakt isim havuzu, snapshot, değişiklik izleme
   yaltri-apps/      uygulama keşfi (Start Menu/Get-StartApps, .desktop) ve eşleştirme
+  yaltri-color/     renk dönüşümleri, formatlar, tonlar, renk geçmişi
   yaltri-platform/  tray, global kısayol, tek-instance IPC, oturum tespiti, program başlatma
-  yaltri/           GPUI uygulaması: daemon, launcher, ayarlar penceresi
+  yaltri/           GPUI uygulaması: daemon, launcher, renk seçici + editör, ayarlar penceresi
 ```
 
 GPUI, `gpui-kit = "=0.9.1"` ile tam sürüme sabitlenmiştir; GPUI 1.0 öncesi olduğundan güncellemeler bilinçli yapılmalı.

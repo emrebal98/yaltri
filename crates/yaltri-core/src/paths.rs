@@ -29,6 +29,10 @@ impl Paths {
         self.data_dir.join("history.toml")
     }
 
+    pub fn colors_file(&self) -> PathBuf {
+        self.data_dir.join("colors.toml")
+    }
+
     pub fn file_index(&self) -> PathBuf {
         self.data_dir.join("files.idx")
     }

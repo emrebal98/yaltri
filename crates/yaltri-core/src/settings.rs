@@ -59,6 +59,11 @@ pub struct FilesSettings {
 pub struct PickerSettings {
     pub enabled: bool,
     pub hotkey: String,
+    /// Format copied to the clipboard on pick: hex, rgb, hsl, hsv, cmyk,
+    /// hwb, decimal, float.
+    pub copy_format: String,
+    /// Open the editor (history, shades, all formats) after picking.
+    pub open_editor: bool,
 }
 
 impl Default for Settings {
@@ -106,8 +111,10 @@ impl Default for FilesSettings {
 impl Default for PickerSettings {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             hotkey: "Super+Shift+C".into(),
+            copy_format: "hex".into(),
+            open_editor: true,
         }
     }
 }
@@ -295,7 +302,8 @@ mod tests {
     fn detects_conflicts_only_between_enabled_tools() {
         let mut s = Settings::default();
         s.picker.hotkey = "space + ALT".into();
-        assert!(s.hotkey_conflicts().is_empty(), "picker disabled by default");
+        s.picker.enabled = false;
+        assert!(s.hotkey_conflicts().is_empty(), "disabled tools never conflict");
         s.picker.enabled = true;
         assert_eq!(s.hotkey_conflicts(), vec![(ToolId::Launcher, ToolId::Picker)]);
     }
