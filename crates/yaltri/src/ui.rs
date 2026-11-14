@@ -181,7 +181,9 @@ pub fn window_frame(title: SharedString, p: &Palette, content: impl IntoElement)
 /// window; Windows handles the buttons as native caption buttons.
 pub fn titlebar(title: SharedString, p: &Palette) -> Stateful<Div> {
     let close_hover = theme::hex("#C42B2B");
-    let caption = |id: &'static str, name: &'static str, area: WindowControlArea| {
+    // Plain client-side buttons: the native caption-button hit areas
+    // missed clicks. Only the title part drags the window.
+    let caption = |id: &'static str, name: &'static str| {
         div()
             .id(id)
             .size(px(28.))
@@ -189,8 +191,8 @@ pub fn titlebar(title: SharedString, p: &Palette) -> Stateful<Div> {
             .items_center()
             .justify_center()
             .rounded(px(R_SM))
+            .cursor_pointer()
             .text_color(p.muted)
-            .window_control_area(area)
             .child(svg().path(format!("icons/{name}.svg")).size(px(14.)).text_color(p.muted))
     };
     div()
@@ -199,38 +201,47 @@ pub fn titlebar(title: SharedString, p: &Palette) -> Stateful<Div> {
         .flex_none()
         .flex()
         .items_center()
-        .gap(px(8.))
-        .pl(px(12.))
         .pr(px(6.))
         .bg(p.background)
-        .window_control_area(WindowControlArea::Drag)
-        .on_mouse_down(MouseButton::Left, |_, window, _| {
-            if !cfg!(windows) {
-                window.start_window_move();
-            }
-        })
-        .child(mark(16., p.foreground, p.accent))
         .child(
             div()
+                .id("titlebar-drag")
                 .flex_1()
                 .min_w_0()
-                .truncate()
-                .text_size(px(13.))
-                .line_height(px(18.))
-                .font_weight(FontWeight::MEDIUM)
-                .child(title),
+                .h_full()
+                .pl(px(12.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .window_control_area(WindowControlArea::Drag)
+                .on_mouse_down(MouseButton::Left, |_, window, _| {
+                    if !cfg!(windows) {
+                        window.start_window_move();
+                    }
+                })
+                .child(mark(16., p.foreground, p.accent))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(13.))
+                        .line_height(px(18.))
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(title),
+                ),
         )
         .child(
             div()
                 .flex()
                 .gap(px(2.))
                 .child(
-                    caption("minimize", "minus", WindowControlArea::Min)
+                    caption("minimize", "minus")
                         .hover(|s| s.bg(p.list_hover))
                         .on_click(|_, window, _| window.minimize_window()),
                 )
                 .child(
-                    caption("close", "x", WindowControlArea::Close)
+                    caption("close", "x")
                         .hover(move |s| s.bg(close_hover))
                         .on_click(|_, window, _| window.remove_window()),
                 ),
@@ -250,6 +261,8 @@ pub fn menu_box(p: &Palette) -> Div {
         .border_color(p.border)
         .shadow(p.shadow_md.clone())
         .text_color(p.foreground)
+        // Clicks on the menu must not reach what is behind it.
+        .occlude()
 }
 
 pub fn menu_item(

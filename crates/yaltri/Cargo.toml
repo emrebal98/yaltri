@@ -24,3 +24,8 @@ yaltri-color.workspace = true
 yaltri-core.workspace = true
 yaltri-files.workspace = true
 yaltri-platform.workspace = true
+
+[build-dependencies]
+embed-resource = "3"
+resvg = { version = "0.46", default-features = false }
+tiny-skia = "0.11"

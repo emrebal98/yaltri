@@ -8786,14 +8786,17 @@ name = "yaltri"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "embed-resource",
  "futures",
  "gpui-kit",
  "image",
  "open",
  "raw-window-handle",
+ "resvg 0.46.0",
  "serde",
  "serde_json",
  "sys-locale",
+ "tiny-skia",
  "toml 1.2.1+spec-1.1.0",
  "tracing",
  "tracing-appender",

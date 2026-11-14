@@ -19,7 +19,7 @@ pub struct MenuEntry {
     pub command: Command,
     /// Lucide SVG source drawn in the menu's text color (Windows).
     pub icon_svg: Option<&'static str>,
-    /// Current shortcut, shown right-aligned (Windows).
+    /// Current shortcut, shown right-aligned in the menu.
     pub shortcut: Option<String>,
 }
 
@@ -94,7 +94,33 @@ mod imp {
         }
     }
 
+    /// Lets Win32 popup menus follow the system light/dark setting. Without
+    /// this they are always light. Uses uxtheme's unnamed exports (ordinal
+    /// 135 SetPreferredAppMode(AllowDark), 136 FlushMenuThemes) like other
+    /// Win32 apps do; does nothing where they are missing.
+    fn follow_system_menu_theme() {
+        use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+        let name: Vec<u16> = "uxtheme.dll\0".encode_utf16().collect();
+        // SAFETY: the ordinals have these signatures since Windows 10 1903;
+        // older builds simply lack them (null) or treat 1 as `true`.
+        unsafe {
+            let lib = LoadLibraryW(name.as_ptr());
+            if lib.is_null() {
+                return;
+            }
+            if let Some(f) = GetProcAddress(lib, 135usize as *const u8) {
+                let set_preferred_app_mode: unsafe extern "system" fn(i32) -> i32 = std::mem::transmute(f);
+                set_preferred_app_mode(1);
+            }
+            if let Some(f) = GetProcAddress(lib, 136usize as *const u8) {
+                let flush_menu_themes: unsafe extern "system" fn() = std::mem::transmute(f);
+                flush_menu_themes();
+            }
+        }
+    }
+
     fn build_menu(entries: &[Option<MenuEntry>]) -> Result<Menu> {
+        follow_system_menu_theme();
         // Native menus follow the apps theme.
         let ink = if crate::icon::apps_use_light_theme() { "#17181B" } else { "#ECEDEF" };
         let menu = Menu::new();
@@ -169,6 +195,20 @@ mod imp {
                         let cmd = e.command;
                         StandardItem {
                             label: e.label.clone(),
+                            // dbusmenu wants [["Control", "Alt", "Space"]].
+                            shortcut: e
+                                .shortcut
+                                .iter()
+                                .map(|spec| {
+                                    spec.split('+')
+                                        .map(|part| match part.trim() {
+                                            "Ctrl" => "Control".to_owned(),
+                                            "Win" => "Super".to_owned(),
+                                            other => other.to_owned(),
+                                        })
+                                        .collect()
+                                })
+                                .collect(),
                             activate: Box::new(move |this: &mut Self| {
                                 let _ = this.tx.unbounded_send(cmd);
                             }),
