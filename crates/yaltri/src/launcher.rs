@@ -48,7 +48,9 @@ const CLOSE_ANIM: Duration = Duration::from_millis(80);
 const HINT_PERIOD: Duration = Duration::from_millis(3000);
 const HINT_IN: f32 = 260.;
 const HINT_OUT: f32 = 220.;
-const HINT_COUNT: usize = 6;
+/// `launcher.hintN.*` strings: what to type, including the `/u` `/d` `/o`
+/// (TR) or `/a` `/f` `/g` (EN) filter shorthands.
+const HINT_COUNT: usize = 8;
 
 pub fn toggle(cx: &mut App) {
     if let Some(handle) = cx.global::<Daemon>().launcher_window.filter(|h| cx.windows().contains(h)) {
@@ -684,5 +686,20 @@ impl Render for Launcher {
             .when_some(below, |card, below| card.child(div().h(px(1.)).flex_none().bg(p.border)).child(below));
 
         div().size_full().pt(px(SHADOW_TOP + dy)).px(px(SHADOW_X)).opacity(opacity).child(card)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_hint_has_strings() {
+        for n in 1..=HINT_COUNT {
+            for part in ["prefix", "example"] {
+                let key = format!("launcher.hint{n}.{part}");
+                assert_ne!(t(&key), key, "missing {key}");
+            }
+        }
     }
 }
