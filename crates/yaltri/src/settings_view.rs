@@ -3,7 +3,6 @@
 
 use gpui_kit::component::{ActiveTheme as _, Disableable as _};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::switch::Switch;
 use gpui_kit::prelude::FluentBuilder as _;
 use std::time::{Duration, SystemTime};
@@ -17,6 +16,7 @@ use yaltri_core::{Settings, ToolId};
 use yaltri_platform::hotkeys;
 
 use crate::daemon::{Daemon, is_implemented};
+use crate::shortcut_input::{ShortcutChanged, ShortcutInput};
 
 pub fn open(cx: &mut App) {
     if let Some(handle) = cx.global::<Daemon>().settings_window
@@ -45,7 +45,7 @@ pub fn open(cx: &mut App) {
 struct ToolRow {
     tool: ToolId,
     enabled: bool,
-    hotkey: Entity<InputState>,
+    hotkey: Entity<ShortcutInput>,
 }
 
 pub struct SettingsView {
@@ -57,6 +57,7 @@ pub struct SettingsView {
     status: Option<(bool, SharedString)>,
     /// Re-renders once a second so the index status stays live.
     _refresh: Task<()>,
+    _subscriptions: Vec<gpui_kit::Subscription>,
 }
 
 impl SettingsView {
@@ -67,15 +68,14 @@ impl SettingsView {
         if status.is_none() && !daemon.hotkey_errors.is_empty() {
             status = Some((true, hotkey_error_text(daemon).into()));
         }
+        let mut subscriptions = Vec::new();
         let rows = ToolId::ALL
             .into_iter()
             .map(|tool| {
                 let value = settings.hotkey(tool).to_owned();
-                let hotkey = cx.new(|cx| {
-                    let mut state = InputState::new(window, cx).placeholder("ör. Alt+Space");
-                    state.set_value(value, window, cx);
-                    state
-                });
+                let hotkey = cx.new(|cx| ShortcutInput::new(tool.as_str(), value, window, cx));
+                // A recorded shortcut takes effect immediately, like PowerToys.
+                subscriptions.push(cx.subscribe(&hotkey, |this: &mut Self, _, _: &ShortcutChanged, cx| this.save(cx)));
                 ToolRow { tool, enabled: settings.is_enabled(tool), hotkey }
             })
             .collect();
@@ -94,13 +94,14 @@ impl SettingsView {
             picker_open_editor: settings.picker.open_editor,
             status,
             _refresh: refresh,
+            _subscriptions: subscriptions,
         }
     }
 
     fn save(&mut self, cx: &mut Context<Self>) {
         let mut settings: Settings = cx.global::<Daemon>().settings.clone();
         for row in &self.rows {
-            let spec = row.hotkey.read(cx).value().trim().to_owned();
+            let spec = row.hotkey.read(cx).value().to_owned();
             if row.enabled && !spec.is_empty() && hotkeys::parse(&spec).is_err() {
                 self.status = Some((true, format!("{}: geçersiz kısayol '{spec}'", row.tool.display_name()).into()));
                 cx.notify();
@@ -235,7 +236,7 @@ impl Render for SettingsView {
                         .items_center()
                         .gap_2()
                         .child(div().w(px(80.)).text_sm().text_color(theme.muted_foreground).child("Kısayol"))
-                        .child(div().flex_1().child(Input::new(&row.hotkey))),
+                        .child(div().flex_1().child(row.hotkey.clone())),
                 )
                 .when(row.tool == ToolId::Picker, |d| {
                     d.child(

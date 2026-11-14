@@ -129,6 +129,18 @@ impl Daemon {
         tray::menu_for(&enabled)
     }
 
+    /// Releases every global hotkey (while a shortcut is being recorded, so
+    /// the keys reach the recorder) or restores them from settings.
+    pub fn set_hotkeys_suspended(&mut self, suspended: bool) {
+        if suspended {
+            if let Some(hotkeys) = self.hotkeys.as_mut() {
+                hotkeys.apply(&[]);
+            }
+        } else {
+            self.apply_hotkeys();
+        }
+    }
+
     fn apply_hotkeys(&mut self) {
         let Some(hotkeys) = self.hotkeys.as_mut() else {
             return;

@@ -5,6 +5,7 @@
 pub mod hotkeys;
 mod icon;
 pub mod ipc;
+pub mod keys;
 pub mod launch;
 pub mod screen;
 pub mod session;

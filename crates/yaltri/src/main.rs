@@ -7,6 +7,7 @@ mod daemon;
 mod launcher;
 mod picker;
 mod settings_view;
+mod shortcut_input;
 
 use std::process::ExitCode;
 
