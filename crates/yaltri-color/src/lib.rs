@@ -1,6 +1,8 @@
 //! Color math for the picker: conversions, text formats, shades and the
 //! picked-color history. No UI or platform code.
 
+mod names;
+
 use std::fmt;
 use std::fs;
 use std::path::Path;

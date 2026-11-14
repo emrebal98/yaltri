@@ -65,6 +65,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
         .with_quit_mode(QuitMode::Explicit)
         .run(move |cx: &mut App| {
             gpui_kit::init(cx);
+            sync_theme(cx);
 
             let history = History::load(&paths.history_file());
             let colors = ColorHistory::load(&paths.colors_file());
@@ -272,8 +273,15 @@ pub fn is_implemented(tool: ToolId) -> bool {
     matches!(tool, ToolId::Launcher | ToolId::Picker)
 }
 
+/// Light/dark from the OS. Re-read before every command (each one opens or
+/// closes a window), so a theme change in system settings is picked up.
+fn sync_theme(cx: &mut App) {
+    gpui_kit::component::Theme::sync_system_appearance(None, cx);
+}
+
 fn handle(cmd: Command, cx: &mut App) {
     tracing::debug!(%cmd, "command");
+    sync_theme(cx);
     match cmd {
         Command::Toggle(ToolId::Launcher) => {
             if cx.global::<Daemon>().settings.launcher.enabled {

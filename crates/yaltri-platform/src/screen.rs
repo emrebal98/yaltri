@@ -58,6 +58,24 @@ pub fn client_origin(hwnd: isize) -> Option<(i32, i32)> {
     (ok != 0).then_some((point.x, point.y))
 }
 
+/// How many "lines" one mouse-wheel notch scrolls, as GPUI reports wheel
+/// deltas in lines: the Windows setting (default 3); one on Linux.
+pub fn wheel_lines_per_notch() -> f32 {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SPI_GETWHEELSCROLLLINES, SystemParametersInfoW};
+        let mut lines: u32 = 3;
+        // SAFETY: SPI_GETWHEELSCROLLLINES writes one u32.
+        let ok = unsafe { SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, (&mut lines as *mut u32).cast(), 0) };
+        // 0 disables scrolling; u32::MAX means "one page": treat both as 1.
+        if ok != 0 && lines > 0 && lines != u32::MAX { lines as f32 } else { 1. }
+    }
+    #[cfg(not(windows))]
+    {
+        1.
+    }
+}
+
 /// Captures the whole desktop. Fails on Wayland (use [`pick_color_portal`]).
 pub fn capture() -> Result<Screenshot> {
     imp::capture()

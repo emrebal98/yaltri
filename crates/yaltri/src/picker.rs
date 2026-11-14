@@ -2,15 +2,16 @@
 //!
 //! Windows / X11: the desktop is captured once and every display gets a
 //! borderless, topmost window showing its part of that frozen image. A small
-//! box next to the cursor shows the color and its code. Scrolling up opens a
-//! magnifier square centered on the cursor that grows with every step;
-//! scrolling down shrinks and finally hides it. Left click picks, right click
-//! or Esc cancels.
+//! box next to the cursor shows the color, its code and name. Scrolling up
+//! opens the magnifier (see `picker_zoom`): a frozen patch around the cursor
+//! that grows 1x-8x; the pixel under the pointer inside it is highlighted and
+//! picked. Left click picks, right click or Esc cancels.
 //!
 //! Wayland: clients cannot read the screen, so the compositor's own picker
 //! is used through the `PickColor` portal.
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
@@ -24,12 +25,13 @@ use yaltri_platform::screen::{self, Screenshot};
 
 use crate::color_editor;
 use crate::daemon::Daemon;
+use crate::picker_zoom::{self as zoom, Capture};
 
-/// Magnifier levels: (cells per side, logical size of one cell). Each step
-/// shows a bigger square with fewer, larger pixels.
-const ZOOM_LEVELS: [(usize, f32); 5] = [(21, 8.), (21, 12.), (17, 18.), (15, 24.), (11, 36.)];
-/// Gap between the cursor (or the magnifier) and the color box.
-const BOX_GAP: f32 = 16.;
+/// Offset of the color box from the cursor.
+const BOX_OFFSET: f32 = 14.;
+/// Padding + border around the magnified image (PowerToys: 3 + 1).
+const LOUPE_CHROME: f32 = 4.;
+const RESIZE: Duration = Duration::from_millis(200);
 
 /// Starts picking, or cancels if already picking.
 pub fn toggle(cx: &mut App) {
@@ -160,6 +162,45 @@ fn fill(c: Rgb) -> gpui_kit::Rgba {
     rgb(u32::from_be_bytes([0, c.r, c.g, c.b]))
 }
 
+/// The open magnifier.
+struct Loupe {
+    level: usize,
+    /// Center of the square, window-relative logical px (where the cursor
+    /// was on the first scroll).
+    center: Point<Pixels>,
+    capture: Capture,
+    image: Arc<RenderImage>,
+    /// Size the resize animation started from, and when.
+    from_side: f32,
+    started: Instant,
+}
+
+impl Loupe {
+    fn side_now(&self) -> f32 {
+        let t = self.started.elapsed().as_secs_f32() / RESIZE.as_secs_f32();
+        zoom::eased(self.from_side, zoom::side(self.level), t)
+    }
+
+    fn animating(&self) -> bool {
+        self.started.elapsed() < RESIZE
+    }
+
+    /// Cell under `pos`, using the settled (target) size.
+    fn cell_under(&self, pos: Point<Pixels>) -> Option<(usize, usize)> {
+        let side = zoom::side(self.level);
+        let left = self.center.x.as_f32() - side / 2.;
+        let top = self.center.y.as_f32() - side / 2.;
+        zoom::cell_at(pos.x.as_f32() - left, pos.y.as_f32() - top, side)
+    }
+}
+
+fn loupe_image(capture: &Capture, level: usize, scale: f32) -> Arc<RenderImage> {
+    let physical = (zoom::side(level) * scale).round().max(1.) as u32;
+    let bgra = zoom::render(capture, physical, zoom::has_grid(level));
+    let frame = image::RgbaImage::from_raw(physical, physical, bgra).map(image::Frame::new).expect("square buffer");
+    Arc::new(RenderImage::new(vec![frame]))
+}
+
 pub struct PickerOverlay {
     shot: Arc<Screenshot>,
     image: Arc<RenderImage>,
@@ -171,8 +212,11 @@ pub struct PickerOverlay {
     image_size: (f32, f32),
     scale: f32,
     cursor: Option<Point<Pixels>>,
-    /// 0 = no magnifier, 1..=ZOOM_LEVELS.len() = magnifier level.
-    zoom: usize,
+    loupe: Option<Loupe>,
+    /// Wheel movement not yet turned into zoom steps. GPUI merges wheel
+    /// events that arrive close together, so one event can be several notches.
+    wheel: f32,
+    lines_per_notch: f32,
     _keys: Subscription,
 }
 
@@ -214,7 +258,9 @@ impl PickerOverlay {
             image_size,
             scale,
             cursor: Some(window.mouse_position()),
-            zoom: 0,
+            loupe: None,
+            wheel: 0.,
+            lines_per_notch: screen::wheel_lines_per_notch(),
             _keys: keys,
         }
     }
@@ -227,7 +273,14 @@ impl PickerOverlay {
         )
     }
 
+    /// The color under `pos`: the magnified pixel when pointing into the
+    /// magnifier, the screen pixel otherwise.
     fn color_at(&self, pos: Point<Pixels>) -> Option<Rgb> {
+        if let Some(loupe) = &self.loupe
+            && let Some((col, row)) = loupe.cell_under(pos)
+        {
+            return Some(loupe.capture.at(col, row));
+        }
         let (x, y) = self.desktop_pixel(pos);
         self.shot.pixel(x, y).map(|[r, g, b]| Rgb::new(r, g, b))
     }
@@ -242,85 +295,133 @@ impl PickerOverlay {
         finish(color, cx);
     }
 
-    fn on_wheel(&mut self, event: &ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let dy = event.delta.pixel_delta(px(16.)).y.as_f32();
-        if dy > 0. && self.zoom < ZOOM_LEVELS.len() {
-            self.zoom += 1;
-        } else if dy < 0. && self.zoom > 0 {
-            self.zoom -= 1;
+    fn on_wheel(&mut self, event: &ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // In notches: line deltas from a mouse wheel, pixel deltas from a
+        // touchpad (48 px per step).
+        self.wheel += match event.delta {
+            gpui_kit::ScrollDelta::Lines(lines) => lines.y / self.lines_per_notch,
+            gpui_kit::ScrollDelta::Pixels(pixels) => pixels.y.as_f32() / 48.,
+        };
+        tracing::debug!(?event.delta, acc = self.wheel, "picker wheel");
+        let steps = self.wheel.trunc();
+        self.wheel -= steps;
+        let cursor = event.position;
+        let current = self.loupe.as_ref().map_or(0, |l| l.level);
+        let target = (current as i32 + steps as i32).clamp(0, zoom::MAX_LEVEL as i32) as usize;
+        if target == current {
+            return;
+        }
+        let old = match (self.loupe.take(), target) {
+            (None, _) => {
+                // First step: freeze the patch around the cursor; no animation.
+                let (x, y) = self.desktop_pixel(cursor);
+                let capture = Capture::from_shot(&self.shot, x, y);
+                let image = loupe_image(&capture, 1, self.scale);
+                self.loupe = Some(Loupe {
+                    level: 1,
+                    center: cursor,
+                    capture,
+                    image,
+                    from_side: zoom::side(1),
+                    started: Instant::now() - RESIZE,
+                });
+                None
+            }
+            (Some(loupe), 0) => Some(loupe.image),
+            (Some(loupe), level) => {
+                let from_side = loupe.side_now();
+                let image = loupe_image(&loupe.capture, level, self.scale);
+                let old_image = loupe.image.clone();
+                self.loupe = Some(Loupe { level, image, from_side, started: Instant::now(), ..loupe });
+                Some(old_image)
+            }
+        };
+        if let Some(old) = old {
+            let _ = window.drop_image(old);
         }
         cx.notify();
     }
 
-    /// Side length of the magnifier square in logical px (0 when hidden).
-    fn loupe_size(&self) -> f32 {
-        match self.zoom {
-            0 => 0.,
-            z => {
-                let (cells, cell) = ZOOM_LEVELS[z - 1];
-                cells as f32 * cell
-            }
-        }
-    }
-
-    /// Magnifier square centered on the cursor, nearest-neighbor pixels.
-    fn loupe(&self, cursor: Point<Pixels>, cx: &App) -> impl IntoElement {
+    /// Magnifier card: frozen patch, baked grid, highlighted pointer cell and
+    /// a small sample of the pointed color right at the cursor.
+    fn loupe_view(&self, loupe: &Loupe, window: &mut Window, cx: &App) -> impl IntoElement {
         let theme = cx.theme();
-        let (cells, cell) = ZOOM_LEVELS[self.zoom - 1];
-        let size = cells as f32 * cell;
-        let (cx0, cy0) = self.desktop_pixel(cursor);
-        let half = (cells / 2) as i32;
-        let rows = (0..cells as i32).map(move |row| {
-            div().flex().children((0..cells as i32).map(move |col| {
-                let [r, g, b] = self.shot.pixel(cx0 + col - half, cy0 + row - half).unwrap_or([0, 0, 0]);
-                let swatch = div().size(px(cell)).bg(rgb(u32::from_be_bytes([0, r, g, b])));
-                if row == half && col == half {
-                    let ring = if Rgb::new(r, g, b).is_dark() { gpui_kit::white() } else { gpui_kit::black() };
-                    swatch.border_2().border_color(ring)
-                } else {
-                    swatch
-                }
-            }))
-        });
+        let side = loupe.side_now();
+        if loupe.animating() {
+            window.request_animation_frame();
+        }
+        let left = loupe.center.x.as_f32() - side / 2.;
+        let top = loupe.center.y.as_f32() - side / 2.;
+
+        // Pointer highlight only once the size settled (cells are stable).
+        let highlight = (!loupe.animating())
+            .then_some(self.cursor)
+            .flatten()
+            .and_then(|c| loupe.cell_under(c).map(|cell| (c, cell)))
+            .map(|(cursor, (col, row))| {
+                let cell = side / zoom::BASE as f32;
+                let color = loupe.capture.at(col, row);
+                let ring = if color.is_dark() { gpui_kit::white() } else { gpui_kit::black() };
+                vec![
+                    div()
+                        .absolute()
+                        .left(px(LOUPE_CHROME + col as f32 * cell))
+                        .top(px(LOUPE_CHROME + row as f32 * cell))
+                        .size(px(cell))
+                        .border_2()
+                        .border_color(ring),
+                    div()
+                        .absolute()
+                        .left(px(cursor.x.as_f32() - left + LOUPE_CHROME - 2.))
+                        .top(px(cursor.y.as_f32() - top + LOUPE_CHROME - 2.))
+                        .size(px(4.))
+                        .bg(fill(color)),
+                ]
+            })
+            .unwrap_or_default();
+
         div()
             .absolute()
-            .left(cursor.x - px(size / 2.))
-            .top(cursor.y - px(size / 2.))
-            .size(px(size))
-            .rounded(theme.radius_lg)
-            .overflow_hidden()
-            .border_2()
+            .left(px(left - LOUPE_CHROME))
+            .top(px(top - LOUPE_CHROME))
+            .size(px(side + LOUPE_CHROME * 2.))
+            .p(px(LOUPE_CHROME - 1.))
+            .bg(theme.popover)
+            .border_1()
             .border_color(theme.border)
+            .rounded(theme.radius)
             .shadow_lg()
-            .children(rows)
+            .child(img(loupe.image.clone()).size(px(side)).object_fit(ObjectFit::Fill))
+            // Deferred: drawn after (above) the magnified image sprite.
+            .children(highlight.into_iter().map(gpui_kit::deferred))
     }
 
-    /// Small box with the color and its code, beside the cursor (or beside
-    /// the magnifier when it is open), flipped to stay on screen.
+    /// PowerToys' color box: swatch, code and color name, next to the cursor
+    /// and flipped to stay on screen.
     fn color_box(&self, cursor: Point<Pixels>, window: &Window, cx: &App) -> impl IntoElement {
         let theme = cx.theme();
         let color = self.color_at(cursor).unwrap_or(Rgb::new(0, 0, 0));
         let format: Format = cx.global::<Daemon>().settings.picker.copy_format.parse().unwrap_or(Format::Hex);
         let text = format.format(color);
+        let name = color.name();
 
-        let (box_w, box_h) = (40. + text.len() as f32 * 9., 40.);
-        let reach = self.loupe_size() / 2. + BOX_GAP;
+        let box_w = 56. + (text.chars().count().max(name.chars().count()) as f32) * 8.5;
+        let box_h = 50.;
         let area = window.bounds().size;
-        let mut x = cursor.x.as_f32() + reach;
-        let mut y = cursor.y.as_f32() + reach;
+        let mut x = cursor.x.as_f32() + BOX_OFFSET;
+        let mut y = cursor.y.as_f32() + BOX_OFFSET;
         if x + box_w > area.width.as_f32() {
-            x = cursor.x.as_f32() - reach - box_w;
+            x = cursor.x.as_f32() - BOX_OFFSET - box_w;
         }
         if y + box_h > area.height.as_f32() {
-            y = cursor.y.as_f32() - reach - box_h;
+            y = cursor.y.as_f32() - BOX_OFFSET - box_h;
         }
 
         div()
             .absolute()
             .left(px(x))
             .top(px(y))
-            .h(px(box_h))
-            .px_2()
+            .p_2()
             .flex()
             .items_center()
             .gap_2()
@@ -330,14 +431,29 @@ impl PickerOverlay {
             .border_color(theme.border)
             .rounded(theme.radius_lg)
             .shadow_lg()
-            .child(div().size(px(24.)).rounded(theme.radius).border_1().border_color(theme.border).bg(fill(color)))
-            .child(div().text_sm().child(text))
+            .child(
+                div()
+                    .size(px(32.))
+                    .flex_shrink_0()
+                    .rounded(theme.radius)
+                    .border_1()
+                    .border_color(theme.border)
+                    .bg(fill(color)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .child(div().text_sm().font_weight(gpui_kit::FontWeight::SEMIBOLD).child(text))
+                    .child(div().text_xs().text_color(theme.muted_foreground).child(name)),
+            )
     }
 }
 
 impl Render for PickerOverlay {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let loupe = self.cursor.filter(|_| self.zoom > 0).map(|c| self.loupe(c, cx));
+        let loupe = self.loupe.as_ref().map(|l| self.loupe_view(l, window, cx).into_any_element());
         let color_box = self.cursor.map(|c| self.color_box(c, window, cx));
         let image = img(self.image.clone())
             .absolute()

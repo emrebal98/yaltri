@@ -6,6 +6,7 @@ mod color_editor;
 mod daemon;
 mod launcher;
 mod picker;
+mod picker_zoom;
 mod settings_view;
 mod shortcut_input;
 
