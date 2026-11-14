@@ -337,6 +337,12 @@ pub fn dropdown(trigger: gpui_kit::Bounds<gpui_kit::Pixels>, body: impl IntoElem
     .with_priority(1)
 }
 
+/// A dropdown's list box: as wide as its trigger at least, scrolling inside
+/// itself when the options do not fit.
+pub fn dropdown_list(id: impl Into<ElementId>, trigger: gpui_kit::Bounds<gpui_kit::Pixels>, p: &Palette) -> Stateful<Div> {
+    menu_box(p).id(id).min_w(trigger.size.width).max_h(px(320.)).overflow_y_scroll()
+}
+
 /// Context menu box; add `menu_item`s and `menu_separator`s.
 pub fn menu_box(p: &Palette) -> Div {
     div()

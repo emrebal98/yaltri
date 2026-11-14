@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Bounds, Context, Div, Entity, FontWeight, InteractiveElement as _, IntoElement,
-    MouseDownEvent, ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
+    ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
     Task, Window, div, img, px,
 };
 use yaltri_apps::games::Launcher;
@@ -611,16 +611,7 @@ impl SettingsView {
             let trigger = self.language_trigger?;
             Some(ui::dropdown(
                 trigger,
-                ui::menu_box(p)
-                    .min_w(trigger.size.width)
-                    .on_mouse_down_out(cx.listener(move |this, e: &MouseDownEvent, _, cx| {
-                        // A click on the trigger toggles it instead.
-                        if !trigger.contains(&e.position) {
-                            this.language_menu = false;
-                            cx.notify();
-                        }
-                    }))
-                    .children(items),
+                ui::dropdown_list("language-list", trigger, p).children(items),
             ))
         })
         .flatten();
@@ -736,15 +727,7 @@ impl SettingsView {
             let trigger = self.format_trigger?;
             Some(ui::dropdown(
                 trigger,
-                ui::menu_box(p)
-                    .min_w(trigger.size.width)
-                    .on_mouse_down_out(cx.listener(move |this, e: &MouseDownEvent, _, cx| {
-                        if !trigger.contains(&e.position) {
-                            this.format_menu = false;
-                            cx.notify();
-                        }
-                    }))
-                    .children(items),
+                ui::dropdown_list("format-list", trigger, p).children(items),
             ))
         })
         .flatten();
@@ -1023,6 +1006,29 @@ impl Render for SettingsView {
 
         // The system title (taskbar, Alt+Tab) follows a language change too.
         window.set_window_title(t("settings.title"));
-        ui::window_frame(t("settings.title").into(), p, body)
+        // While a dropdown is open, a transparent layer under it takes the
+        // wheel (the page must not scroll away from the trigger) and closes
+        // it on a click outside.
+        let dropdown_open = self.language_menu || self.format_menu;
+        ui::window_frame(t("settings.title").into(), p, body).relative().when(dropdown_open, |d| {
+            d.child(
+                div()
+                    .id("dropdown-blocker")
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full()
+                    .occlude()
+                    .on_scroll(|_, _, cx| cx.stop_propagation())
+                    .on_mouse_down(
+                        gpui_kit::MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            this.language_menu = false;
+                            this.format_menu = false;
+                            cx.notify();
+                        }),
+                    ),
+            )
+        })
     }
 }
