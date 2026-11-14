@@ -27,6 +27,8 @@ pub struct GeneralSettings {
     pub start_with_system: bool,
     /// UI language: "auto" (follow the system), "en" or "tr".
     pub language: String,
+    /// "system" (follow the OS light/dark setting), "dark" or "light".
+    pub theme: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -107,7 +109,7 @@ impl Default for Settings {
 
 impl Default for GeneralSettings {
     fn default() -> Self {
-        Self { start_with_system: false, language: "auto".into() }
+        Self { start_with_system: false, language: "auto".into(), theme: "system".into() }
     }
 }
 

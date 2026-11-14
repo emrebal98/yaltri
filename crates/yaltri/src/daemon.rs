@@ -70,6 +70,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
         .run(move |cx: &mut App| {
             gpui_kit::init(cx);
             crate::i18n::set_language(&loaded.settings.general.language);
+            crate::theme::set_choice(crate::theme::ThemeChoice::from_key(&loaded.settings.general.theme));
             sync_theme(cx);
 
             let history = History::load(&paths.history_file());
@@ -249,6 +250,9 @@ impl Daemon {
         }
         if settings.general.language != self.settings.general.language {
             crate::i18n::set_language(&settings.general.language);
+        }
+        if settings.general.theme != self.settings.general.theme {
+            crate::theme::set_choice(crate::theme::ThemeChoice::from_key(&settings.general.theme));
         }
         self.settings = settings;
         self.settings_warning = None;

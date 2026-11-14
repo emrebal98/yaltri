@@ -20,7 +20,7 @@ use yaltri_platform::keys;
 use crate::daemon::{Daemon, is_implemented};
 use crate::i18n::{t, tf};
 use crate::shortcut_input::{ShortcutChanged, ShortcutInput};
-use crate::theme::{self, Palette, R_MD, R_SM};
+use crate::theme::{self, Palette, R_MD, R_SM, ThemeChoice};
 use crate::ui::{self, ButtonKind, TextStyle as _};
 use crate::update::{self, UpdateState};
 
@@ -71,6 +71,10 @@ pub struct SettingsView {
     picker_open_editor: bool,
     copy_format: Format,
     format_menu: bool,
+    /// `general.language`: "auto", "tr", "en".
+    language: String,
+    language_menu: bool,
+    theme: ThemeChoice,
     /// Startup warning (settings file was unreadable).
     warning: Option<SharedString>,
     /// (`is_error`, text).
@@ -114,6 +118,9 @@ impl SettingsView {
             picker_open_editor: settings.picker.open_editor,
             copy_format: settings.picker.copy_format.parse().unwrap_or(Format::Hex),
             format_menu: false,
+            language: settings.general.language.clone(),
+            language_menu: false,
+            theme: ThemeChoice::from_key(&settings.general.theme),
             warning,
             toast: None,
             update: UpdateState::Idle,
@@ -162,6 +169,10 @@ impl SettingsView {
         settings.games = self.games.clone();
         settings.picker.open_editor = self.picker_open_editor;
         settings.picker.copy_format = self.copy_format.key().into();
+        settings.general.language = self.language.clone();
+        settings.general.theme = self.theme.key().into();
+        let looks_changed =
+            settings.general.language != previous.general.language || settings.general.theme != previous.general.theme;
 
         // Two tools on one shortcut: keep the second one's old shortcut.
         if let Some((a, b)) = settings.hotkey_conflicts().first().copied() {
@@ -176,6 +187,11 @@ impl SettingsView {
         if let Err(e) = cx.global_mut::<Daemon>().update_settings(settings.clone()) {
             self.flash(true, tf("settings.save_failed", &[("error", &format!("{e:#}"))]).into(), cx);
             return;
+        }
+        // Language and theme apply to every open window right away.
+        if looks_changed {
+            theme::sync_components(cx);
+            cx.refresh_windows();
         }
 
         // A new shortcut another program holds: go back to the old one.
@@ -530,6 +546,111 @@ impl SettingsView {
         ]
     }
 
+    fn general_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        // Each language in its own name; "auto" follows the OS locale.
+        let languages: [(&str, &str); 3] =
+            [("auto", t("settings.general.language.system")), ("tr", "Türkçe"), ("en", "English")];
+        let current = languages.iter().find(|(key, _)| *key == self.language).map_or(languages[0].1, |(_, name)| *name);
+
+        let language_menu = self.language_menu.then(|| {
+            let items = languages.into_iter().enumerate().map(|(ix, (key, name))| {
+                let selected = key == self.language;
+                div()
+                    .id(("language-item", ix))
+                    .h(px(32.))
+                    .px(px(10.))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .rounded(px(4.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(p.list_hover))
+                    .child(
+                        div().size(px(16.)).flex_none().when(selected, |d| d.child(ui::icon("check", 16., p.accent_strong))),
+                    )
+                    .child(div().text_size(px(13.)).child(name))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.language = key.to_owned();
+                        this.language_menu = false;
+                        this.save(cx);
+                    }))
+            });
+            deferred(
+                anchored().snap_to_window().child(
+                    ui::menu_box(p)
+                        .mt(px(36.))
+                        .min_w(px(160.))
+                        .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                            this.language_menu = false;
+                            cx.notify();
+                        }))
+                        .children(items),
+                ),
+            )
+            .with_priority(1)
+        });
+        let language_button = div()
+            .relative()
+            .flex_none()
+            .child(
+                div()
+                    .id("language")
+                    .w(px(160.))
+                    .h(px(32.))
+                    .px(px(10.))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .rounded(px(R_SM))
+                    .border_1()
+                    .border_color(p.border)
+                    .bg(p.surface_raised)
+                    .text_size(px(13.))
+                    .cursor_pointer()
+                    .hover(|s| s.border_color(p.border_strong))
+                    .child(div().truncate().child(current))
+                    .child(ui::icon("chevron-down", 14., p.muted))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.language_menu = !this.language_menu;
+                        cx.notify();
+                    })),
+            )
+            .children(language_menu);
+
+        let segments = ThemeChoice::ALL.into_iter().map(|choice| {
+            let (icon, label) = match choice {
+                ThemeChoice::System => ("monitor", t("settings.general.theme.system")),
+                ThemeChoice::Dark => ("moon", t("settings.general.theme.dark")),
+                ThemeChoice::Light => ("sun", t("settings.general.theme.light")),
+            };
+            ui::segment(choice.key(), icon, label, choice == self.theme, p).on_click(cx.listener(move |this, _, _, cx| {
+                if this.theme != choice {
+                    this.theme = choice;
+                    this.save(cx);
+                }
+            }))
+        });
+
+        let body = div()
+            .px(px(16.))
+            .flex()
+            .flex_col()
+            .rounded(px(R_MD))
+            .bg(p.surface)
+            .border_1()
+            .border_color(p.border)
+            .child(
+                setting_row(56., true, t("settings.general.language"), Some(t("settings.general.language_hint")), p)
+                    .child(language_button),
+            )
+            .child(
+                setting_row(56., false, t("settings.general.theme"), Some(t("settings.general.theme_hint")), p)
+                    .child(ui::segmented_track(p).children(segments)),
+            );
+
+        vec![section_header(t("settings.general.title"), None, None, p).into_any_element(), body.into_any_element()]
+    }
+
     fn picker_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let enabled = self.row(ToolId::Picker).enabled;
         let toggle = ui::switch("picker-enabled", enabled, p)
@@ -777,6 +898,7 @@ impl Render for SettingsView {
         });
 
         let mut sections: Vec<AnyElement> = Vec::new();
+        sections.extend(self.general_section(p, cx));
         if is_implemented(ToolId::Launcher) {
             sections.extend(self.launcher_section(p, cx));
         }
@@ -847,6 +969,8 @@ impl Render for SettingsView {
             .child(footer)
             .children(toast);
 
+        // The system title (taskbar, Alt+Tab) follows a language change too.
+        window.set_window_title(t("settings.title"));
         ui::window_frame(t("settings.title").into(), p, body)
     }
 }

@@ -144,6 +144,44 @@ pub fn button(id: impl Into<ElementId>, kind: ButtonKind, p: &Palette) -> Statef
     }
 }
 
+/// Track of a segmented control (32 px); add `segment`s.
+pub fn segmented_track(p: &Palette) -> Div {
+    div()
+        .h(px(32.))
+        .p(px(2.))
+        .flex()
+        .flex_none()
+        .gap(px(2.))
+        .rounded(px(R_SM))
+        .bg(p.surface_raised)
+        .border_1()
+        .border_color(p.border)
+}
+
+/// One option of a segmented control; the caller adds `.on_click`.
+pub fn segment(id: impl Into<ElementId>, icon_name: &str, label: impl Into<SharedString>, active: bool, p: &Palette) -> Stateful<Div> {
+    let color = if active { p.foreground } else { p.muted };
+    div()
+        .id(id)
+        .h(px(26.))
+        .px(px(10.))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .rounded(px(R_XS))
+        .border_1()
+        .text_size(px(13.))
+        .cursor_pointer()
+        .when(active, |d| {
+            d.bg(p.surface).border_color(p.border).shadow(p.shadow_sm.clone()).font_weight(FontWeight::SEMIBOLD)
+        })
+        .when(!active, |d| d.border_color(gpui_kit::transparent_black()).font_weight(FontWeight::MEDIUM))
+        .text_color(color)
+        .hover(|s| s.text_color(p.foreground))
+        .child(icon(icon_name, 14., color))
+        .child(label.into())
+}
+
 /// Launcher filter chip.
 pub fn chip(id: impl Into<ElementId>, label: impl Into<SharedString>, active: bool, p: &Palette) -> Stateful<Div> {
     div()

@@ -125,3 +125,14 @@
 # Tepsi
 "tray.settings" = "Ayarlar"
 "tray.quit" = "Çıkış"
+
+# Ayarlar: Genel
+"settings.general.title" = "Genel"
+"settings.general.language" = "Dil"
+"settings.general.language_hint" = "Değişiklik hemen uygulanır"
+"settings.general.language.system" = "Sistem dili"
+"settings.general.theme" = "Tema"
+"settings.general.theme_hint" = "Varsayılan: sistemi izler"
+"settings.general.theme.system" = "Sistem"
+"settings.general.theme.dark" = "Koyu"
+"settings.general.theme.light" = "Açık"

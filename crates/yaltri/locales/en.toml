@@ -125,3 +125,14 @@
 # Tray
 "tray.settings" = "Settings"
 "tray.quit" = "Quit"
+
+# Settings: General
+"settings.general.title" = "General"
+"settings.general.language" = "Language"
+"settings.general.language_hint" = "Changes apply right away"
+"settings.general.language.system" = "System language"
+"settings.general.theme" = "Theme"
+"settings.general.theme_hint" = "Default: follows the system"
+"settings.general.theme.system" = "System"
+"settings.general.theme.dark" = "Dark"
+"settings.general.theme.light" = "Light"
