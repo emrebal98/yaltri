@@ -19,7 +19,8 @@ use crate::theme::{self, Palette, R_MD, R_SM, R_XS};
 use crate::ui::{self, ButtonKind, TextStyle as _};
 
 const WIDTH: f32 = 620.;
-const HEIGHT: f32 = 520.;
+/// 520 in the spec; the system frame takes a few px of it on Windows.
+const HEIGHT: f32 = 532.;
 
 const TOAST_IN: f32 = 180.;
 const TOAST_VISIBLE: f32 = 1600.;

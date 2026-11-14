@@ -100,6 +100,7 @@
 "settings.index.no_watch" = "no live watching, rescanned periodically"
 "settings.group.games" = "Games"
 "settings.games.count" = "{n} games"
+"settings.games.count_one" = "1 game"
 "settings.games.none" = "no games found"
 "settings.games.off" = "off"
 "settings.games.needs_apps" = "Games are found with app search; turn on Apps first."

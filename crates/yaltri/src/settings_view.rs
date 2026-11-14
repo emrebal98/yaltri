@@ -251,6 +251,11 @@ impl SettingsView {
     }
 }
 
+/// "1 game" / "4 games".
+fn games_count(n: usize) -> String {
+    if n == 1 { t("settings.games.count_one").into() } else { tf("settings.games.count", &[("n", &n.to_string())]) }
+}
+
 /// `1893440` -> `1.9M`.
 fn compact(n: usize) -> String {
     match n {
@@ -443,7 +448,7 @@ impl SettingsView {
             let (text, color) = if !on {
                 (t("settings.games.off").to_owned(), p.muted)
             } else if count > 0 {
-                (tf("settings.games.count", &[("n", &count.to_string())]), p.foreground)
+                (games_count(count), p.foreground)
             } else {
                 (t("settings.games.none").to_owned(), p.muted)
             };
@@ -512,7 +517,7 @@ impl SettingsView {
             )
             .child(group_label(
                 t("settings.group.games"),
-                Some(tf("settings.games.count", &[("n", &total.to_string())])),
+                Some(games_count(total)),
                 p,
             ))
             .child(games_block)

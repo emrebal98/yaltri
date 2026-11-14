@@ -31,10 +31,12 @@ const LIST_PADDING: f32 = 6.;
 /// Rows shown before the list scrolls.
 const VISIBLE_ROWS: usize = 8;
 const NO_RESULTS_HEIGHT: f32 = 136.;
-/// Transparent margin around the card so its shadow is not clipped.
-const SHADOW_X: f32 = 24.;
-const SHADOW_TOP: f32 = 8.;
-const SHADOW_BOTTOM: f32 = 40.;
+/// Margin around the card for its shadow. Zero: a popup window's
+/// "transparent" background is drawn dark on Windows, so the card fills the
+/// window and the system draws the popup shadow.
+const SHADOW_X: f32 = 0.;
+const SHADOW_TOP: f32 = 0.;
+const SHADOW_BOTTOM: f32 = 0.;
 
 const OPEN_ANIM: Duration = Duration::from_millis(120);
 const CLOSE_ANIM: Duration = Duration::from_millis(80);
