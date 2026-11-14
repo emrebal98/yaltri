@@ -1,9 +1,8 @@
 name: CI
 
+# Pull requests only: a merged PR was already checked, so pushes to main
+# (which only happen through merges) do not run it again.
 on:
-  push:
-    branches: [main]
-    paths-ignore: ["**.md", "LICENSE"]
   pull_request:
     paths-ignore: ["**.md", "LICENSE"]
   workflow_dispatch:

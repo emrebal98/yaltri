@@ -186,6 +186,18 @@ sabitlendi (`gpui-kit = "=0.9.1"`); güncellerken ayrıca test et.
 Her README çevirisi bu dosyanın yanında `README.<dil>.md` olarak durur (örneğin `README.tr.md`).
 Yeni dil eklemek için `README.md`'yi kopyala, çevir ve her README'nin en üstündeki dil satırına link ekle.
 
+### Katkı akışı
+
+- Her değişiklik kendi branch'inde yapılır ve pull request ile gelir; `main`'e doğrudan push yapılmaz.
+- Commit mesajları ve PR başlıkları [Conventional Commits](https://www.conventionalcommits.org) biçiminde ve tamamen küçük harftir:
+  `tür(kapsam): özet`, örneğin `feat(launcher): filter results by kind` veya `fix(tray): follow the system theme`.
+  Türler: `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `ci`, `chore`. Kapsam alanı belirtir: `launcher`, `picker`, `settings`, `tray`, `files`, `apps`…
+- CI (clippy + testler, Windows ve Linux) pull request'lerde çalışır; ayrı bir kontrol PR başlığını ve commit mesajlarını denetler.
+- Yerel kontrolü her klonda bir kez aç, kurala uymayan commit mesajı hemen reddedilsin:
+  ```sh
+  git config core.hooksPath .githooks
+  ```
+
 ### Sürüm yayınlamak
 
 1. `Cargo.toml` içinde `[workspace.package] version` değerini artır ve commit'le.

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Rejects commits whose first line is not `type(scope): summary` in lowercase.
+# Enable once per clone:  git config core.hooksPath .githooks
+subject=$(grep -v '^#' "$1" | head -n 1)
+exec "$(git rev-parse --show-toplevel)/scripts/check-commit-title.sh" "$subject"
