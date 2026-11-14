@@ -628,7 +628,11 @@ impl Render for Launcher {
             .items_center()
             .gap(px(12.))
             .child(ui::mark(20., p.muted, p.accent_strong))
-            .child(div().flex_1().min_w_0().child(Input::new(&self.input).appearance(false).text_size(px(17.))))
+            .child(div().flex_1().min_w_0().child(Input::new(&self.input)
+                    .appearance(false)
+                    .text_size(px(17.))
+                    // Text starts right after the mark, where the hints are.
+                    .px_0()))
             .children(hint_overlay);
 
         let content = self.content();
