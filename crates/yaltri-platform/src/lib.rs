@@ -6,6 +6,7 @@
 pub mod hookkeys;
 #[cfg(windows)]
 pub mod powertoys;
+pub mod autostart;
 pub mod hotkeys;
 pub mod icon;
 pub mod ipc;

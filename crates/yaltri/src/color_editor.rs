@@ -545,6 +545,7 @@ impl Render for ColorEditor {
         let menu = self.menu.as_ref().map(|m| self.menu_view(m, p, cx));
         let confirm = self.confirm.map(|focus| self.confirm_view(focus, history.len(), p, cx));
 
+        window.set_window_title(t("editor.title"));
         ui::window_frame(t("editor.title").into(), p, body).relative().children(menu).children(confirm)
     }
 }

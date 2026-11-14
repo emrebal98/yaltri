@@ -56,7 +56,11 @@ const HOTKEY_RETRY: Duration = Duration::from_secs(20);
 const THEME_POLL: Duration = Duration::from_secs(5);
 
 pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<()> {
+    let first_run = !paths.settings_file().exists();
     let loaded = Settings::load(&paths.settings_file())?;
+    if first_run {
+        first_run_setup(&loaded.settings, &paths);
+    }
     let (tx, mut rx) = mpsc::unbounded::<Command>();
 
     // Bind the IPC socket before the UI so a racing second instance sees us.
@@ -70,6 +74,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
         .run(move |cx: &mut App| {
             gpui_kit::init(cx);
             crate::i18n::set_language(&loaded.settings.general.language);
+            crate::theme::set_choice(crate::theme::ThemeChoice::from_key(&loaded.settings.general.theme));
             sync_theme(cx);
 
             let history = History::load(&paths.history_file());
@@ -250,6 +255,9 @@ impl Daemon {
         if settings.general.language != self.settings.general.language {
             crate::i18n::set_language(&settings.general.language);
         }
+        if settings.general.theme != self.settings.general.theme {
+            crate::theme::set_choice(crate::theme::ThemeChoice::from_key(&settings.general.theme));
+        }
         self.settings = settings;
         self.settings_warning = None;
         self.apply_hotkeys();
@@ -339,6 +347,19 @@ impl Daemon {
         if let Err(e) = history.save(&self.paths.history_file()) {
             tracing::warn!("saving history failed: {e:#}");
         }
+    }
+}
+
+/// First start (no settings file yet): apply defaults that live outside the
+/// settings file, then write the file so this runs only once.
+fn first_run_setup(settings: &Settings, paths: &Paths) {
+    if settings.general.start_with_system
+        && let Err(e) = yaltri_platform::autostart::set_enabled(true)
+    {
+        tracing::warn!("enabling autostart failed: {e:#}");
+    }
+    if let Err(e) = settings.save(&paths.settings_file()) {
+        tracing::warn!("writing default settings failed: {e:#}");
     }
 }
 

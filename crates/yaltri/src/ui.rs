@@ -144,6 +144,44 @@ pub fn button(id: impl Into<ElementId>, kind: ButtonKind, p: &Palette) -> Statef
     }
 }
 
+/// Track of a segmented control (32 px); add `segment`s.
+pub fn segmented_track(p: &Palette) -> Div {
+    div()
+        .h(px(32.))
+        .p(px(2.))
+        .flex()
+        .flex_none()
+        .gap(px(2.))
+        .rounded(px(R_SM))
+        .bg(p.surface_raised)
+        .border_1()
+        .border_color(p.border)
+}
+
+/// One option of a segmented control; the caller adds `.on_click`.
+pub fn segment(id: impl Into<ElementId>, icon_name: &str, label: impl Into<SharedString>, active: bool, p: &Palette) -> Stateful<Div> {
+    let color = if active { p.foreground } else { p.muted };
+    div()
+        .id(id)
+        .h(px(26.))
+        .px(px(10.))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .rounded(px(R_XS))
+        .border_1()
+        .text_size(px(13.))
+        .cursor_pointer()
+        .when(active, |d| {
+            d.bg(p.surface).border_color(p.border).shadow(p.shadow_sm.clone()).font_weight(FontWeight::SEMIBOLD)
+        })
+        .when(!active, |d| d.border_color(gpui_kit::transparent_black()).font_weight(FontWeight::MEDIUM))
+        .text_color(color)
+        .hover(|s| s.text_color(p.foreground))
+        .child(icon(icon_name, 14., color))
+        .child(label.into())
+}
+
 /// Launcher filter chip.
 pub fn chip(id: impl Into<ElementId>, label: impl Into<SharedString>, active: bool, p: &Palette) -> Stateful<Div> {
     div()
@@ -264,6 +302,45 @@ pub fn titlebar(title: SharedString, p: &Palette) -> Stateful<Div> {
                         .on_click(|_, window, _| window.remove_window()),
                 ),
         )
+}
+
+/// Records an element's window bounds while it is painted (add it as a child
+/// of the element). Dropdowns use this to attach to their trigger.
+pub fn track_bounds<V: 'static>(
+    view: gpui_kit::WeakEntity<V>,
+    store: impl Fn(&mut V, gpui_kit::Bounds<gpui_kit::Pixels>) + 'static,
+) -> impl IntoElement {
+    gpui_kit::canvas(
+        move |bounds, _, cx| {
+            let _ = view.update(cx, |view, _| store(view, bounds));
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
+/// A dropdown list right under `trigger`, left-aligned with it. It moves
+/// above the trigger when it does not fit below, and always stays 8 px
+/// inside the window.
+pub fn dropdown(trigger: gpui_kit::Bounds<gpui_kit::Pixels>, body: impl IntoElement) -> impl IntoElement {
+    gpui_kit::deferred(
+        gpui_kit::anchored()
+            .attach(trigger, gpui_kit::Anchor::BottomLeft)
+            .anchor(gpui_kit::Anchor::TopLeft)
+            .offset(gpui_kit::point(px(0.), px(4.)))
+            .snap_to_window_with_margin(px(8.))
+            .child(body),
+    )
+    .with_priority(1)
+}
+
+/// A dropdown's list box: as wide as its trigger at least, scrolling inside
+/// itself when the options do not fit.
+pub fn dropdown_list(id: impl Into<ElementId>, trigger: gpui_kit::Bounds<gpui_kit::Pixels>, p: &Palette) -> Stateful<Div> {
+    menu_box(p).id(id).min_w(trigger.size.width).max_h(px(320.)).overflow_y_scroll()
 }
 
 /// Context menu box; add `menu_item`s and `menu_separator`s.

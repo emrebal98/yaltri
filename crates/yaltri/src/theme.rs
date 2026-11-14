@@ -2,7 +2,7 @@
 //! the OS light/dark setting. Every window re-renders when it changes.
 
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, RwLock};
 
 use gpui_kit::{App, BoxShadow, Context, Hsla, SharedString, Subscription, Window, WindowAppearance, point, px, rgba};
 use serde::Deserialize;
@@ -149,20 +149,65 @@ fn load(mode: &str) -> Palette {
 static DARK: LazyLock<Palette> = LazyLock::new(|| load("dark"));
 static LIGHT: LazyLock<Palette> = LazyLock::new(|| load("light"));
 
+/// The theme setting: follow the OS, or force one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ThemeChoice {
+    #[default]
+    System,
+    Dark,
+    Light,
+}
+
+impl ThemeChoice {
+    pub const ALL: [ThemeChoice; 3] = [ThemeChoice::System, ThemeChoice::Dark, ThemeChoice::Light];
+
+    /// From `settings.toml` (`general.theme`); unknown values follow the OS.
+    pub fn from_key(key: &str) -> Self {
+        match key {
+            "dark" => ThemeChoice::Dark,
+            "light" => ThemeChoice::Light,
+            _ => ThemeChoice::System,
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            ThemeChoice::System => "system",
+            ThemeChoice::Dark => "dark",
+            ThemeChoice::Light => "light",
+        }
+    }
+}
+
+static CHOICE: RwLock<ThemeChoice> = RwLock::new(ThemeChoice::System);
+
+/// Applies the theme setting. Call `sync_components` and refresh windows
+/// afterwards so open windows pick it up.
+pub fn set_choice(choice: ThemeChoice) {
+    if let Ok(mut current) = CHOICE.write() {
+        *current = choice;
+    }
+}
+
+/// Dark or not, given the OS appearance and the theme setting.
 pub fn is_dark(appearance: WindowAppearance) -> bool {
-    matches!(appearance, WindowAppearance::Dark | WindowAppearance::VibrantDark)
+    match CHOICE.read().map(|c| *c).unwrap_or_default() {
+        ThemeChoice::Dark => true,
+        ThemeChoice::Light => false,
+        ThemeChoice::System => matches!(appearance, WindowAppearance::Dark | WindowAppearance::VibrantDark),
+    }
 }
 
 pub fn palette(dark: bool) -> &'static Palette {
     if dark { &DARK } else { &LIGHT }
 }
 
-/// Palette for the OS appearance as seen by `window`.
+/// Palette for `window` (OS appearance or the forced theme).
 pub fn of(window: &Window) -> &'static Palette {
     palette(is_dark(window.appearance()))
 }
 
-/// Palette for the OS appearance (outside a window).
+/// Palette outside a window (OS appearance or the forced theme).
 pub fn of_app(cx: &App) -> &'static Palette {
     palette(is_dark(cx.window_appearance()))
 }
@@ -177,10 +222,11 @@ pub fn follow_system<V: 'static>(window: &mut Window, cx: &mut Context<V>) -> Su
 }
 
 /// Points the component library (text input caret, selection, popovers) at
-/// our tokens, for the current OS appearance.
+/// our tokens, for the active theme.
 pub fn sync_components(cx: &mut App) {
-    gpui_kit::component::Theme::sync_system_appearance(None, cx);
     let p = of_app(cx);
+    let mode = if p.dark { gpui_kit::component::ThemeMode::Dark } else { gpui_kit::component::ThemeMode::Light };
+    gpui_kit::component::Theme::change(mode, None, cx);
     let theme = gpui_kit::component::Theme::global_mut(cx);
     theme.font_family = ui_font();
     theme.mono_font_family = mono_font();
