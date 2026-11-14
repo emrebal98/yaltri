@@ -58,6 +58,25 @@ pub fn client_origin(hwnd: isize) -> Option<(i32, i32)> {
     (ok != 0).then_some((point.x, point.y))
 }
 
+/// Lets the system draw a popup's frame: rounded corners (with the system
+/// shadow) and a 1 px border in `border` (0xRRGGBB). Windows 11; older
+/// systems ignore the attributes.
+#[cfg(windows)]
+pub fn round_popup(hwnd: isize, border: u32) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
+    };
+    let corner = DWMWCP_ROUND;
+    // COLORREF is 0x00BBGGRR.
+    let colorref = ((border & 0xFF) << 16) | (border & 0xFF00) | ((border >> 16) & 0xFF);
+    // SAFETY: `hwnd` is a live window of this process; the values are the
+    // documented 4-byte types for these attributes.
+    unsafe {
+        DwmSetWindowAttribute(hwnd as _, DWMWA_WINDOW_CORNER_PREFERENCE as u32, (&corner as *const i32).cast(), 4);
+        DwmSetWindowAttribute(hwnd as _, DWMWA_BORDER_COLOR as u32, (&colorref as *const u32).cast(), 4);
+    }
+}
+
 /// How many "lines" one mouse-wheel notch scrolls, as GPUI reports wheel
 /// deltas in lines: the Windows setting (default 3); one on Linux.
 pub fn wheel_lines_per_notch() -> f32 {

@@ -31,6 +31,10 @@ const LIST_PADDING: f32 = 6.;
 /// Rows shown before the list scrolls.
 const VISIBLE_ROWS: usize = 8;
 const NO_RESULTS_HEIGHT: f32 = 136.;
+/// Our 1 px card border. On Windows the system draws the border and the
+/// rounded corners of the popup instead (see `ui::frame_popup`): a rounded
+/// card in a square window would show the window's dark corners.
+const BORDER: f32 = if cfg!(windows) { 0. } else { 1. };
 /// Margin around the card for its shadow. Zero: a popup window's
 /// "transparent" background is drawn dark on Windows, so the card fills the
 /// window and the system draws the popup shadow.
@@ -99,7 +103,7 @@ fn card_height(content: Content) -> f32 {
         Content::Rows(n) => 1. + list_height(n),
         Content::NoResults => 1. + NO_RESULTS_HEIGHT,
     };
-    INPUT_HEIGHT + CHIPS_HEIGHT + below + 2.
+    INPUT_HEIGHT + CHIPS_HEIGHT + below + BORDER * 2.
 }
 
 fn window_size(card: f32) -> gpui_kit::Size<gpui_kit::Pixels> {
@@ -175,6 +179,8 @@ fn ease_out(t: f32) -> f32 {
 
 pub struct Launcher {
     input: Entity<InputState>,
+    /// Theme the system frame was last styled for.
+    framed_dark: Option<bool>,
     /// Which kind of results to show; Tab cycles it, `/o ` style prefixes set it.
     scope: Scope,
     items: Vec<SearchItem>,
@@ -269,6 +275,7 @@ impl Launcher {
             closing: None,
             hint: 0,
             hint_since: Instant::now(),
+            framed_dark: None,
             _hints: hints,
             _subscriptions: vec![on_change, on_activation, on_key, theme::follow_system(window, cx)],
         }
@@ -576,6 +583,10 @@ impl Launcher {
 impl Render for Launcher {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = theme::of(window);
+        if self.framed_dark != Some(p.dark) {
+            self.framed_dark = Some(p.dark);
+            ui::frame_popup(window, p);
+        }
 
         // Open: fade in and slide down 4 px; close: fade out.
         let (opacity, dy) = match self.closing {
@@ -663,10 +674,9 @@ impl Render for Launcher {
             .flex_col()
             .overflow_hidden()
             .bg(p.surface)
-            .border_1()
-            .border_color(p.border)
-            .rounded(px(R_LG))
-            .shadow(p.shadow_lg.clone())
+            .when(!cfg!(windows), |card| {
+                card.border_1().border_color(p.border).rounded(px(R_LG)).shadow(p.shadow_lg.clone())
+            })
             .text_color(p.foreground)
             .font_family(theme::ui_font())
             .child(input_row)

@@ -11,6 +11,24 @@ use gpui_kit::{
 
 use crate::theme::{self, Palette, R_LG, R_MD, R_SM, R_XS};
 
+/// Windows: has the system round the popup's corners (with its shadow) and
+/// draw its border in our `border` color. No-op elsewhere.
+pub fn frame_popup(window: &gpui_kit::Window, p: &Palette) {
+    #[cfg(windows)]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        if let Ok(handle) = HasWindowHandle::window_handle(window)
+            && let RawWindowHandle::Win32(h) = handle.as_raw()
+        {
+            let c = gpui_kit::Rgba::from(p.border);
+            let rgb = |v: f32| (v * 255.).round() as u32;
+            yaltri_platform::screen::round_popup(h.hwnd.get(), (rgb(c.r) << 16) | (rgb(c.g) << 8) | rgb(c.b));
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (window, p);
+}
+
 /// Height of our titlebar.
 pub const TITLEBAR_HEIGHT: f32 = 40.;
 
