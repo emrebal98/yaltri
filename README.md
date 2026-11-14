@@ -1,15 +1,17 @@
 # Yaltri
 
-*Yaltrı-* (Göktürkçe): parıldamak.
+**English** · [Türkçe](README.tr.md)
 
-Yaltri, sistem tepsisinde sessizce bekleyen küçük bir yardımcı. Bir kısayolla açılır,
-aradığını bulur, işin bitince kaybolur.
+*Yaltrı-* (Old Turkic): to shine.
 
-- **Ara:** Uygulamalar, dosyalar ve oyunlar tek kutuda. Yazmaya başladığın anda sonuçlar gelir.
-- **Hesapla:** `2^10`, `5 km to mi`, `=pi`. Sonuç Enter ile panoya kopyalanır.
-- **Renk seç:** Ekranın herhangi bir yerinden renk al, istediğin formatta kopyala.
+Yaltri is a small helper that waits quietly in your system tray. Press a shortcut, find what
+you need, and it gets out of your way.
 
-Windows ve Linux'ta (Ubuntu, Arch) aynı görünür. Tek dosyadır, kurulum gerektirmez, internete bağlanmaz.
+- **Search:** Apps, files and games in one box. Results appear as you type.
+- **Calculate:** `2^10`, `5 km to mi`, `=pi`. Press Enter to copy the result.
+- **Pick colors:** Grab a color from anywhere on screen and copy it in the format you want.
+
+Looks the same on Windows and Linux (Ubuntu, Arch). A single file: no installer, no internet connection.
 
 [![Release](https://img.shields.io/github/v/release/emrebal98/yaltri?include_prereleases)](https://github.com/emrebal98/yaltri/releases)
 [![CI](https://github.com/emrebal98/yaltri/actions/workflows/ci.yml/badge.svg)](https://github.com/emrebal98/yaltri/actions/workflows/ci.yml)
@@ -17,17 +19,17 @@ Windows ve Linux'ta (Ubuntu, Arch) aynı görünür. Tek dosyadır, kurulum gere
 
 ---
 
-## Kurulum
+## Installation
 
 ### Windows
 
-1. [**yaltri-x86_64-pc-windows-msvc.zip**](https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-x86_64-pc-windows-msvc.zip) dosyasını indir.
-2. İstediğin bir klasöre çıkar.
-3. `yaltri.exe`'yi çalıştır. Tepsi ikonu belirir.
+1. Download [**yaltri-x86_64-pc-windows-msvc.zip**](https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-x86_64-pc-windows-msvc.zip).
+2. Extract it to any folder.
+3. Run `yaltri.exe`. The tray icon appears.
 
-> İlk açılışta Windows "bilinmeyen yayıncı" uyarısı gösterebilir: **Ek bilgi → Yine de çalıştır**.
+> On first launch Windows may warn about an unknown publisher: **More info → Run anyway**.
 
-Bilgisayar açılınca başlasın istersen: `Win+R` → `shell:startup` → açılan klasöre `yaltri.exe` kısayolu koy.
+To start with Windows: `Win+R` → `shell:startup` → put a shortcut to `yaltri.exe` in that folder.
 
 ### Linux
 
@@ -38,16 +40,16 @@ install -Dm755 yaltri-x86_64-unknown-linux-gnu/yaltri ~/.local/bin/yaltri
 yaltri
 ```
 
-Eksik kütüphane hatası alırsan:
+If a library is missing:
 
 ```sh
 sudo apt install libxkbcommon-x11-0 libvulkan1 mesa-vulkan-drivers   # Ubuntu
 sudo pacman -S libxkbcommon-x11 vulkan-icd-loader                    # Arch
 ```
 
-GNOME'da tepsi ikonu için AppIndicator eklentisi gerekir (Ubuntu'da hazır gelir).
+On GNOME the tray icon needs the AppIndicator extension (preinstalled on Ubuntu).
 
-Oturum açılınca başlasın istersen:
+To start on login:
 
 ```sh
 mkdir -p ~/.config/autostart
@@ -57,80 +59,80 @@ printf '[Desktop Entry]\nType=Application\nName=Yaltri\nExec=%s\n' "$HOME/.local
 
 ---
 
-## Kullanım
+## Usage
 
-| Kısayol | Ne yapar |
+| Shortcut | Action |
 |---|---|
-| `Super+Space` | Arama kutusunu açar |
-| `Super+Shift+C` | Renk seçiciyi açar |
+| `Super+Space` | Open search |
+| `Super+Shift+C` | Open the color picker |
 
-Kısayolları **Ayarlar** penceresinden değiştirebilirsin (tepsi ikonuna sağ tık → Ayarlar).
+Change shortcuts in the **Settings** window (right-click the tray icon → Settings).
 
-### Arama
+### Search
 
-| Tuş | |
+| Key | |
 |---|---|
-| `↑` `↓` | Sonuçlar arasında gez |
-| `Enter` | Aç |
-| `Ctrl+Enter` | Dosyanın bulunduğu klasörü aç |
-| `Esc` | Kapat |
+| `↑` `↓` | Move through results |
+| `Enter` | Open |
+| `Ctrl+Enter` | Open the containing folder |
+| `Esc` | Close |
 
-- **Uygulamalar:** Başlat menüsündeki ve mağazadan kurulan uygulamalar, Linux'ta kurulu masaüstü uygulamaları.
-- **Dosyalar:** Yaltri bilgisayarındaki dosya adlarını kendi index'inde tutar, milyonlarca dosyada bile anında bulur.
-  İlk tarama birkaç dakika sürebilir, sonra değişiklikleri kendisi takip eder.
-- **Oyunlar:** Steam, Xbox / PC Game Pass, Epic Games, Riot Games, GOG, Ubisoft Connect, EA app;
-  Linux'ta Steam, Heroic ve Lutris. Oyunlar kendi launcher'ları üzerinden açılır.
-- **Hesap:** Matematik, birim çevirme ve sabitler. Sık kullandıkların listede üste çıkar.
+- **Apps:** Start menu and store apps on Windows, installed desktop apps on Linux.
+- **Files:** Yaltri keeps its own index of file names and finds them instantly, even across millions of files.
+  The first scan can take a few minutes; after that it follows changes on its own.
+- **Games:** Steam, Xbox / PC Game Pass, Epic Games, Riot Games, GOG, Ubisoft Connect, EA app;
+  Steam, Heroic and Lutris on Linux. Games start through their own launcher.
+- **Math:** Arithmetic, unit conversion and constants. Things you open often move to the top.
 
-### Renk seçici
+### Color picker
 
-- İmlecin yanında rengin kodu ve adı görünür.
-- **Fare tekerleği** ile büyüteci aç, yakınlaştır, uzaklaştır.
-- **Sol tık** rengi seçer ve kopyalar. **Sağ tık** veya `Esc` vazgeçer.
-- Seçimden sonra açılan editörde renk geçmişi, açık/koyu tonlar ve 9 format var:
+- The color's code and name follow the cursor.
+- **Mouse wheel** opens the magnifier and zooms in and out.
+- **Left click** picks the color and copies it. **Right click** or `Esc` cancels.
+- The editor that opens after a pick has your color history, lighter and darker shades and 9 formats:
   HEX, RGB, HSL, HSV, OKLCH, CMYK, HWB, Decimal, Float.
-  ★ ile işaretlediğin format, bir sonraki seçimde doğrudan kopyalanır.
+  Star (★) a format to copy it directly on the next pick.
 
-### Komut satırı
+### Command line
 
 ```sh
-yaltri                    # arka planda başlat
-yaltri toggle launcher    # arama kutusunu aç / kapat
-yaltri toggle picker      # renk seçiciyi aç
-yaltri settings           # ayarları aç
-yaltri quit               # kapat
+yaltri                    # start in the background
+yaltri toggle launcher    # open / close search
+yaltri toggle picker      # open the color picker
+yaltri settings           # open settings
+yaltri quit               # quit
 ```
 
 ### Wayland
 
-Wayland, uygulamaların kendi kısayolunu tanımlamasına izin vermez. Kısayolu masaüstü ayarlarından ekle,
-komut olarak `yaltri toggle launcher` yaz:
+Wayland does not let apps register their own global shortcuts. Add one in your desktop settings
+with the command `yaltri toggle launcher`:
 
-- **GNOME:** Ayarlar → Klavye → Klavye Kısayolları → Özel Kısayollar
-- **KDE:** Sistem Ayarları → Kısayollar → Özel Kısayollar
+- **GNOME:** Settings → Keyboard → Keyboard Shortcuts → Custom Shortcuts
+- **KDE:** System Settings → Shortcuts → Custom Shortcuts
 - **Hyprland:** `bind = SUPER, SPACE, exec, yaltri toggle launcher`
 
 ---
 
-## Ayarlar ve dosyalar
+## Settings and files
 
 |  | Windows | Linux |
 |---|---|---|
-| Ayarlar | `%APPDATA%\yaltri\config\settings.toml` | `~/.config/yaltri/settings.toml` |
-| Index, geçmiş, loglar | `%LOCALAPPDATA%\yaltri\data` | `~/.local/share/yaltri` |
+| Settings | `%APPDATA%\yaltri\config\settings.toml` | `~/.config/yaltri/settings.toml` |
+| Index, history, logs | `%LOCALAPPDATA%\yaltri\data` | `~/.local/share/yaltri` |
 
-**Kaldırmak için:** tepsi menüsünden **Çıkış**, sonra `yaltri` dosyasını ve bu iki klasörü sil.
+**To uninstall:** choose **Quit** from the tray menu, then delete the `yaltri` binary and both folders.
 
 ---
 
-## Geliştirme
+## Development
 
-Katkıya açığız. Hata bildirimi ve öneriler için [issue](https://github.com/emrebal98/yaltri/issues) açabilirsin.
+Contributions are welcome. Open an [issue](https://github.com/emrebal98/yaltri/issues) for bugs and ideas.
 
-### Ortamı kurmak
+### Setup
 
-1. [Rust](https://rustup.rs)'ı kur (stable).
-2. Linux'taysan derleme bağımlılıklarını kur:
+1. Install [Rust](https://rustup.rs) (stable).
+2. On Linux, install the build dependencies:
    ```sh
    # Ubuntu / Debian
    sudo apt install build-essential pkg-config libxkbcommon-dev libxkbcommon-x11-dev \
@@ -140,54 +142,59 @@ Katkıya açığız. Hata bildirimi ve öneriler için [issue](https://github.co
    sudo pacman -S base-devel libxkbcommon-x11 wayland libx11 libxcb fontconfig \
      freetype2 vulkan-icd-loader dbus
    ```
-3. Repoyu klonla ve çalıştır:
+3. Clone and run:
    ```sh
    git clone https://github.com/emrebal98/yaltri
    cd yaltri
    cargo run -p yaltri
    ```
 
-### Sık kullanılan komutlar
+### Common commands
 
 ```sh
-cargo run -p yaltri                      # debug build, loglar terminalde
-cargo test --workspace                   # testler
+cargo run -p yaltri                      # debug build, logs in the terminal
+cargo test --workspace                   # tests
 cargo clippy --workspace --all-targets   # lint
 cargo build --release -p yaltri          # target/release/yaltri(.exe)
 ```
 
-Ayrıntılı log için `YALTRI_LOG=debug` ortam değişkenini ayarla.
+Set `YALTRI_LOG=debug` for verbose logs.
 
-### Proje yapısı
+### Project layout
 
 ```
 crates/
-  yaltri/           uygulama: arama penceresi, renk seçici, editör, ayarlar (GPUI)
-  yaltri-core/      ayarlar, komutlar, arama altyapısı, geçmiş
-  yaltri-calc/      hesap makinesi
-  yaltri-files/     dosya index'i ve değişiklik takibi
-  yaltri-apps/      uygulama ve oyun keşfi, ikonlar
-  yaltri-color/     renk dönüşümleri, formatlar, renk adları
-  yaltri-platform/  tepsi, global kısayollar, ekran yakalama, işletim sistemi bağlantıları
+  yaltri/           the app: search window, color picker, editor, settings (GPUI)
+  yaltri-core/      settings, commands, search plumbing, history
+  yaltri-calc/      calculator
+  yaltri-files/     file index and change tracking
+  yaltri-apps/      app and game discovery, icons
+  yaltri-color/     color conversions, formats, color names
+  yaltri-platform/  tray, global shortcuts, screen capture, OS integration
 ```
 
-Arayüz [GPUI](https://gpui.rs) ile yazıldı. GPUI henüz 1.0 olmadığı için sürümü `Cargo.toml`'da
-sabitlendi (`gpui-kit = "=0.9.1"`); güncellerken ayrıca test et.
+The UI is built with [GPUI](https://gpui.rs). GPUI is pre-1.0, so its version is pinned in
+`Cargo.toml` (`gpui-kit = "=0.9.1"`); test carefully when upgrading.
 
-### Sürüm yayınlamak
+### Documentation languages
 
-1. `Cargo.toml` içinde `[workspace.package] version` değerini artır ve commit'le.
-2. Etiketi gönder:
+Each README translation lives next to this file as `README.<lang>.md` (for example `README.tr.md`).
+To add one, copy `README.md`, translate it, and add a link to the language line at the top of every README.
+
+### Releasing
+
+1. Bump `[workspace.package] version` in `Cargo.toml` and commit.
+2. Push a tag:
    ```sh
    git tag v0.2.0
    git push origin v0.2.0
    ```
 
-GitHub Actions Windows ve Linux paketlerini derleyip [Releases](https://github.com/emrebal98/yaltri/releases)
-sayfasına yükler. `v0.2.0-beta.1` gibi etiketler ön sürüm olarak yayınlanır.
+GitHub Actions builds the Windows and Linux packages and uploads them to
+[Releases](https://github.com/emrebal98/yaltri/releases). Tags like `v0.2.0-beta.1` are published as pre-releases.
 
 ---
 
-## Lisans
+## License
 
 [MIT](LICENSE)

@@ -65,7 +65,7 @@ jobs:
           # Version-less names keep `releases/latest/download/<asset>` links stable.
           $name = "yaltri-${{ matrix.target }}"
           New-Item -ItemType Directory $name | Out-Null
-          Copy-Item target/${{ matrix.target }}/release/yaltri.exe, README.md, LICENSE $name
+          Copy-Item target/${{ matrix.target }}/release/yaltri.exe, README.md, README.tr.md, LICENSE $name
           Compress-Archive -Path $name -DestinationPath "$name.zip"
           (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
           "ASSET=$name.zip" >> $env:GITHUB_ENV
@@ -75,7 +75,7 @@ jobs:
         run: |
           name="yaltri-${{ matrix.target }}"
           mkdir "$name"
-          cp target/${{ matrix.target }}/release/yaltri README.md LICENSE "$name/"
+          cp target/${{ matrix.target }}/release/yaltri README.md README.tr.md LICENSE "$name/"
           tar czf "$name.tar.gz" "$name"
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
           echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
