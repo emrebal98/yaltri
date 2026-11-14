@@ -17,6 +17,7 @@ pub struct Settings {
     pub general: GeneralSettings,
     pub launcher: LauncherSettings,
     pub files: FilesSettings,
+    pub games: GamesSettings,
     pub picker: PickerSettings,
 }
 
@@ -34,6 +35,26 @@ pub struct LauncherSettings {
     /// compositor binds `yaltri toggle launcher` instead.
     pub hotkey: String,
     pub max_results: usize,
+}
+
+/// Game launchers whose installed games show up in the launcher. Launchers
+/// that are not installed are simply skipped.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GamesSettings {
+    pub steam: bool,
+    pub epic: bool,
+    pub gog: bool,
+    pub ubisoft: bool,
+    pub ea: bool,
+    pub heroic: bool,
+    pub lutris: bool,
+}
+
+impl Default for GamesSettings {
+    fn default() -> Self {
+        Self { steam: true, epic: true, gog: true, ubisoft: true, ea: true, heroic: true, lutris: true }
+    }
 }
 
 /// What the launcher searches besides the calculator.
@@ -73,6 +94,7 @@ impl Default for Settings {
             general: GeneralSettings::default(),
             launcher: LauncherSettings::default(),
             files: FilesSettings::default(),
+            games: GamesSettings::default(),
             picker: PickerSettings::default(),
         }
     }

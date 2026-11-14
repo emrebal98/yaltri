@@ -8,6 +8,7 @@ Windows, Ubuntu ve Arch üzerinde aynı görünüm için [GPUI](https://gpui.rs)
 | Launcher: hesap makinesi + birim çevirme | ✅ |
 | Launcher: uygulama arama (Start Menu + Store / `.desktop`) | ✅ |
 | Launcher: dosya/klasör arama (kendi index'imiz, Everything gerekmez) | ✅ |
+| Launcher: oyunlar (Steam, Epic, GOG, Ubisoft, EA · Linux: Steam, Heroic, Lutris) | ✅ |
 | Renk seçici (büyüteç, 8 format, geçmiş, tonlar) | ✅ |
 
 ## Kullanım
@@ -32,6 +33,13 @@ HEX · RGB · HSL · HSV · CMYK · HWB · Decimal · Float. ★ ile seçimde ko
 - Windows / X11: masaüstü görüntüsü alınır, her ekranda dondurulmuş haliyle gösterilir.
 - Wayland (GNOME, KDE, Hyprland): ekran okunamadığı için masaüstünün kendi seçicisi
   (`xdg-desktop-portal` PickColor) açılır, sonuç aynı editöre gelir.
+
+### Oyunlar
+
+Kurulu oyunlar launcher'ların kendi kayıtlarından okunur ve launcher üzerinden başlatılır
+(giriş, overlay ve DRM çalışsın diye): Steam `steam://rungameid`, Epic `com.epicgames.launcher://`,
+Ubisoft `uplay://`, EA `origin2://`, GOG doğrudan exe; Linux'ta Heroic `heroic://` ve Lutris `lutris:`.
+Ayarlar → Oyunlar'dan launcher bazında açılıp kapatılır; her launcher'ın yanında bulunan oyun sayısı görünür.
 
 ### Dosya index'i
 

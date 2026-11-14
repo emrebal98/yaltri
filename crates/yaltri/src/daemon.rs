@@ -190,6 +190,11 @@ impl Daemon {
     /// Persists `settings` and re-applies everything that depends on them.
     pub fn update_settings(&mut self, settings: Settings) -> Result<()> {
         settings.save(&self.paths.settings_file())?;
+        if settings.games != self.settings.games
+            && let Some(apps) = &self.apps
+        {
+            apps.set_games(settings.games.clone());
+        }
         self.settings = settings;
         self.settings_warning = None;
         self.apply_hotkeys();
@@ -219,7 +224,7 @@ impl Daemon {
             self.files = None;
         }
         if files.apps_enabled && self.apps.is_none() {
-            self.apps = Some(Arc::new(AppsProvider::start(self.paths.data_dir.join("icons"))));
+            self.apps = Some(Arc::new(AppsProvider::start(self.paths.data_dir.join("icons"), self.settings.games.clone())));
         }
 
         let mut providers: Vec<Box<dyn SearchProvider>> = vec![Box::new(CalcProvider::new())];
@@ -232,6 +237,11 @@ impl Daemon {
             providers.push(Box::new(FilesProvider::new(indexer)));
         }
         self.providers = Arc::new(providers);
+    }
+
+    /// Games found per launcher (empty while apps are off or still loading).
+    pub fn game_counts(&self) -> std::collections::HashMap<yaltri_apps::games::Launcher, usize> {
+        self.apps.as_ref().map(|a| a.game_counts()).unwrap_or_default()
     }
 
     pub fn index_status(&self) -> Option<yaltri_files::Status> {

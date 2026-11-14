@@ -8,12 +8,15 @@ use gpui_kit::prelude::FluentBuilder as _;
 use std::time::{Duration, SystemTime};
 
 use gpui_kit::{
-    App, AppContext as _, Bounds, Context, Entity, IntoElement, ParentElement as _, Render, SharedString,
+    App, AppContext as _, Bounds, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _, Render,
+    SharedString, StatefulInteractiveElement as _,
     Styled as _, Task, TitlebarOptions, Window, WindowBounds, WindowOptions, div, px, size,
 };
 use yaltri_files::Phase;
 use yaltri_core::{Settings, ToolId};
 use yaltri_platform::hotkeys;
+
+use yaltri_apps::games::Launcher;
 
 use crate::daemon::{Daemon, is_implemented};
 use crate::shortcut_input::{ShortcutChanged, ShortcutInput};
@@ -27,7 +30,7 @@ pub fn open(cx: &mut App) {
     }
 
     let options = WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(560.), px(720.)), cx))),
+        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(560.), px(820.)), cx))),
         titlebar: Some(TitlebarOptions { title: Some("Yaltri Ayarları".into()), ..Default::default() }),
         app_id: Some("yaltri".into()),
         ..Default::default()
@@ -52,6 +55,7 @@ pub struct SettingsView {
     rows: Vec<ToolRow>,
     files_enabled: bool,
     apps_enabled: bool,
+    games: yaltri_core::settings::GamesSettings,
     picker_open_editor: bool,
     /// Feedback from the last save, or startup warnings. (`is_error`, text)
     status: Option<(bool, SharedString)>,
@@ -88,6 +92,7 @@ impl SettingsView {
             rows,
             files_enabled: settings.files.files_enabled,
             apps_enabled: settings.files.apps_enabled,
+            games: settings.games.clone(),
             picker_open_editor: settings.picker.open_editor,
             status,
             _refresh: refresh,
@@ -109,6 +114,7 @@ impl SettingsView {
         }
         settings.files.files_enabled = self.files_enabled;
         settings.files.apps_enabled = self.apps_enabled;
+        settings.games = self.games.clone();
         settings.picker.open_editor = self.picker_open_editor;
         if let Some((a, b)) = settings.hotkey_conflicts().first() {
             self.status = Some((
@@ -184,6 +190,7 @@ impl Render for SettingsView {
         let settings_path = daemon.paths.settings_file().display().to_string();
         let index_text = index_status_text(daemon);
         let hotkey_errors = daemon.hotkey_errors.clone();
+        let game_counts = daemon.game_counts();
 
         let tool_rows = self.rows.iter().enumerate().map(|(ix, row)| {
             let implemented = is_implemented(row.tool);
@@ -251,7 +258,9 @@ impl Render for SettingsView {
         });
 
         div()
+            .id("settings-root")
             .size_full()
+            .overflow_y_scroll()
             .flex()
             .flex_col()
             .gap_3()
@@ -304,6 +313,50 @@ impl Render for SettingsView {
                                 ),
                             ),
                     ),
+            )
+            .child(div().text_xl().child("Oyunlar"))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .p_3()
+                    .border_1()
+                    .border_color(theme.border)
+                    .rounded(theme.radius)
+                    .when(!self.apps_enabled, |d| {
+                        d.child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.muted_foreground)
+                                .child("Oyunlar uygulama aramasıyla birlikte çalışır; önce Uygulamalar'ı açın."),
+                        )
+                    })
+                    .children(Launcher::PLATFORM.iter().copied().map(|launcher| {
+                        let on = launcher.enabled_in(&self.games);
+                        let count = game_counts.get(&launcher).copied().unwrap_or(0);
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                Switch::new(launcher.display_name())
+                                    .label(launcher.display_name())
+                                    .checked(on)
+                                    .disabled(!self.apps_enabled)
+                                    .on_change(cx.listener(move |this, value: &bool, _, cx| {
+                                        launcher.set_in(&mut this.games, *value);
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(div().text_xs().text_color(theme.muted_foreground).child(if on && count > 0 {
+                                format!("{count} oyun")
+                            } else if on {
+                                "oyun bulunamadı".to_owned()
+                            } else {
+                                String::new()
+                            }))
+                    })),
             )
             .when_some(self.status.clone(), |d, (is_error, text)| {
                 d.child(

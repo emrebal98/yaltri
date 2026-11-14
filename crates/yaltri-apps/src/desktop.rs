@@ -174,6 +174,8 @@ pub fn discover(dirs: &[PathBuf], locale: Option<&str>, desktops: &[String]) -> 
                 location: path.display().to_string(),
                 action: ItemAction::Run { program, args, terminal: entry.terminal },
                 icon,
+                icon_from: None,
+                launcher: None,
             });
         }
     }

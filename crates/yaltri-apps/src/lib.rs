@@ -1,16 +1,22 @@
 //! Installed-application search: Start Menu + Store apps on Windows,
-//! `.desktop` files on Linux. Fuzzy-matched by name and keywords.
+//! `.desktop` files on Linux, plus games from PC game launchers.
+//! Fuzzy-matched by name and keywords.
 
 pub mod desktop;
+pub mod games;
 pub mod icons;
 #[cfg(windows)]
 mod windows;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
+
+use games::Launcher;
+use yaltri_core::settings::GamesSettings;
 
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
@@ -29,10 +35,16 @@ pub struct App {
     pub location: String,
     pub action: ItemAction,
     pub icon: Option<PathBuf>,
+    /// Shell item to take the icon from when it is not the action's target
+    /// (a game started via URL, whose exe holds the icon). Windows only.
+    pub icon_from: Option<String>,
+    /// Set for games: which launcher provides it.
+    pub launcher: Option<Launcher>,
 }
 
-/// Every app currently installed, de-duplicated by name.
-pub fn discover() -> Vec<App> {
+/// Every app and enabled-launcher game currently installed, de-duplicated by
+/// name (a Start Menu shortcut wins over the same game from a launcher).
+pub fn discover(games: &GamesSettings) -> Vec<App> {
     #[cfg(windows)]
     let apps = {
         let mut apps = windows::start_menu_apps();
@@ -40,11 +52,14 @@ pub fn discover() -> Vec<App> {
         apps
     };
     #[cfg(not(windows))]
-    let apps = desktop::discover(
+    let mut apps = desktop::discover(
         &desktop::application_dirs(),
         desktop::current_locale().as_deref(),
         &desktop::current_desktops(),
     );
+    #[cfg(windows)]
+    let mut apps = apps;
+    apps.extend(games::discover(games));
     dedupe(apps)
 }
 
@@ -53,9 +68,13 @@ pub fn discover() -> Vec<App> {
 fn attach_icons(apps: &mut [App], icon_cache: &std::path::Path) {
     #[cfg(windows)]
     for app in apps.iter_mut().filter(|a| a.icon.is_none()) {
-        let parsing_name = match &app.action {
-            ItemAction::Open(path) => path.to_string_lossy().into_owned(),
-            ItemAction::OpenUrl(url) => url.clone(),
+        let parsing_name = match (&app.icon_from, &app.action) {
+            // Launcher manifests mix '/' and '\'; the shell wants '\'.
+            (Some(from), _) => from.replace('/', "\\"),
+            // A game URL (steam://, uplay://) has no shell icon of its own.
+            (None, _) if app.launcher.is_some() => continue,
+            (None, ItemAction::Open(path)) => path.to_string_lossy().into_owned(),
+            (None, ItemAction::OpenUrl(url)) => url.clone(),
             _ => continue,
         };
         app.icon = icons::icon_for(&parsing_name, icon_cache);
@@ -70,18 +89,24 @@ fn dedupe(apps: Vec<App>) -> Vec<App> {
 pub struct AppsProvider {
     apps: Arc<RwLock<Vec<App>>>,
     matcher: Mutex<Matcher>,
+    /// Wakes the discovery thread with new game settings.
+    refresh: Option<Sender<GamesSettings>>,
 }
 
 impl AppsProvider {
-    /// Discovers apps in the background now and every few minutes.
+    /// Discovers apps and games in the background now, every few minutes,
+    /// and whenever `set_games` changes which launchers are searched.
     /// `icon_cache` holds extracted icons (Windows).
-    pub fn start(icon_cache: PathBuf) -> Self {
+    pub fn start(icon_cache: PathBuf, games: GamesSettings) -> Self {
         let apps: Arc<RwLock<Vec<App>>> = Arc::default();
         let shared = apps.clone();
+        let (tx, rx) = mpsc::channel::<GamesSettings>();
         let _ = thread::Builder::new().name("yaltri-apps".into()).spawn(move || {
+            let mut games = games;
             loop {
-                let mut found = discover();
-                tracing::info!(count = found.len(), "applications discovered");
+                let mut found = discover(&games);
+                let game_count = found.iter().filter(|a| a.launcher.is_some()).count();
+                tracing::info!(count = found.len(), games = game_count, "applications discovered");
                 // Publish right away; icons follow (first run extracts them).
                 *shared.write().unwrap() = found.clone();
                 let started = std::time::Instant::now();
@@ -89,18 +114,38 @@ impl AppsProvider {
                 let with_icon = found.iter().filter(|a| a.icon.is_some()).count();
                 tracing::info!(with_icon, took = ?started.elapsed(), "application icons ready");
                 *shared.write().unwrap() = found;
-                thread::sleep(REFRESH_EVERY);
+                match rx.recv_timeout(REFRESH_EVERY) {
+                    Ok(new) => games = new,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
             }
         });
-        Self::with_apps(apps)
+        Self { refresh: Some(tx), ..Self::with_apps(apps) }
     }
 
     fn with_apps(apps: Arc<RwLock<Vec<App>>>) -> Self {
-        Self { apps, matcher: Mutex::new(Matcher::new(Config::DEFAULT)) }
+        Self { apps, matcher: Mutex::new(Matcher::new(Config::DEFAULT)), refresh: None }
+    }
+
+    /// Re-discovers now with these launchers enabled.
+    pub fn set_games(&self, games: GamesSettings) {
+        if let Some(tx) = &self.refresh {
+            let _ = tx.send(games);
+        }
     }
 
     pub fn count(&self) -> usize {
         self.apps.read().unwrap().len()
+    }
+
+    /// Games found per launcher, for the settings window.
+    pub fn game_counts(&self) -> HashMap<Launcher, usize> {
+        let mut counts = HashMap::new();
+        for launcher in self.apps.read().unwrap().iter().filter_map(|a| a.launcher) {
+            *counts.entry(launcher).or_insert(0) += 1;
+        }
+        counts
     }
 }
 
@@ -189,6 +234,8 @@ mod tests {
             location: String::new(),
             action: ItemAction::OpenUrl(name.into()),
             icon: None,
+            icon_from: None,
+            launcher: None,
         }
     }
 
