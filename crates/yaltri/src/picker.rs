@@ -13,12 +13,11 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Context, InteractiveElement as _, IntoElement,
-    KeystrokeEvent, MouseButton, MouseDownEvent, MouseMoveEvent, ObjectFit, ParentElement as _, Pixels, Point,
-    Render, RenderImage, ScrollEvent, Styled as _, StyledImage as _, Subscription, Window, WindowBounds,
-    WindowKind, WindowOptions, div, img, px, rgb,
+    AnyWindowHandle, App, AppContext as _, Context, FontWeight, InteractiveElement as _, IntoElement, KeystrokeEvent,
+    MouseButton, MouseDownEvent, MouseMoveEvent, ObjectFit, ParentElement as _, Pixels, Point, Render, RenderImage,
+    ScrollEvent, Styled as _, StyledImage as _, Subscription, Window, WindowBounds, WindowKind, WindowOptions, div,
+    img, px, rgb,
 };
 use yaltri_color::{Format, Rgb};
 use yaltri_platform::screen::{self, Screenshot};
@@ -26,11 +25,18 @@ use yaltri_platform::screen::{self, Screenshot};
 use crate::color_editor;
 use crate::daemon::Daemon;
 use crate::picker_zoom::{self as zoom, Capture};
+use crate::theme::{self, Palette};
+use crate::ui::TextStyle as _;
 
-/// Offset of the color box from the cursor.
-const BOX_OFFSET: f32 = 14.;
-/// Padding + border around the magnified image (PowerToys: 3 + 1).
-const LOUPE_CHROME: f32 = 4.;
+/// Offset of the color label from the cursor.
+const BOX_OFFSET: f32 = 16.;
+/// The label flips to the other side this close to a screen edge.
+const EDGE: f32 = 8.;
+/// Gap between the magnifier and the label under it.
+const LOUPE_LABEL_GAP: f32 = 8.;
+/// The magnifier's 1 px frame around the magnified image.
+const LOUPE_CHROME: f32 = 1.;
+const LOUPE_RADIUS: f32 = 12.;
 const RESIZE: Duration = Duration::from_millis(200);
 
 /// Starts picking, or cancels if already picking.
@@ -344,8 +350,7 @@ impl PickerOverlay {
 
     /// Magnifier card: frozen patch, baked grid, highlighted pointer cell and
     /// a small sample of the pointed color right at the cursor.
-    fn loupe_view(&self, loupe: &Loupe, window: &mut Window, cx: &App) -> impl IntoElement {
-        let theme = cx.theme();
+    fn loupe_view(&self, loupe: &Loupe, window: &mut Window, p: &Palette) -> impl IntoElement {
         let side = loupe.side_now();
         if loupe.animating() {
             window.request_animation_frame();
@@ -360,8 +365,12 @@ impl PickerOverlay {
             .flatten()
             .and_then(|c| zoom::pointer_overlay(&loupe.capture, loupe.level, (c.x.as_f32() - left, c.y.as_f32() - top)))
             .map(|(outline, grid)| {
-                let at = |x: i32, y: i32| div().absolute().left(px(LOUPE_CHROME + x as f32)).top(px(LOUPE_CHROME + y as f32));
-                let line = |white: bool| if white { gpui_kit::white() } else { gpui_kit::black() };
+                let at = |x: i32, y: i32| {
+                    div().absolute().left(px(LOUPE_CHROME + x as f32)).top(px(LOUPE_CHROME + y as f32))
+                };
+                let line = |white: bool| {
+                    if white { gpui_kit::white() } else { gpui_kit::black() }
+                };
                 grid.into_iter()
                     .map(|g| at(g.x, g.y).size(px(1.)).bg(line(g.white).opacity(g.strength)))
                     .chain([at(outline.x, outline.y).size(px(outline.side as f32)).border_1().border_color(line(outline.white))])
@@ -374,59 +383,82 @@ impl PickerOverlay {
             .left(px(left - LOUPE_CHROME))
             .top(px(top - LOUPE_CHROME))
             .size(px(side + LOUPE_CHROME * 2.))
-            .p(px(LOUPE_CHROME - 1.))
-            .bg(theme.popover)
             .border_1()
-            .border_color(theme.border)
-            .rounded(theme.radius)
-            .shadow_lg()
-            .child(img(loupe.image.clone()).size(px(side)).object_fit(ObjectFit::Fill))
+            .border_color(p.border)
+            .rounded(px(LOUPE_RADIUS))
+            .shadow(p.shadow_lg.clone())
+            .child(
+                img(loupe.image.clone())
+                    .size(px(side))
+                    .rounded(px(LOUPE_RADIUS - LOUPE_CHROME))
+                    .object_fit(ObjectFit::Fill),
+            )
             // Deferred: drawn after (above) the magnified image sprite.
             .children(overlay.into_iter().map(gpui_kit::deferred))
     }
 
-    /// PowerToys' color box: swatch, code and color name, next to the cursor
-    /// and flipped to stay on screen.
-    fn color_box(&self, cursor: Point<Pixels>, window: &Window, cx: &App) -> impl IntoElement {
-        let theme = cx.theme();
+    /// Color label: swatch, code and name. Follows the cursor (flipping
+    /// near screen edges), or sits centered under the open magnifier.
+    fn color_box(&self, cursor: Point<Pixels>, window: &Window, p: &Palette, cx: &App) -> impl IntoElement {
         let color = self.color_at(cursor).unwrap_or(Rgb::new(0, 0, 0));
         let format: Format = cx.global::<Daemon>().settings.picker.copy_format.parse().unwrap_or(Format::Hex);
         let text = format.format(color);
         let name = color.name();
 
-        let box_w = 56. + (text.chars().count().max(name.chars().count()) as f32) * 8.5;
-        let box_h = 50.;
+        // Size estimate for placement: 6 + swatch 44 + gap 10 + text + 14.
+        let text_w = (text.chars().count() as f32 * 9.).max(name.chars().count() as f32 * 7.5);
+        let box_w = 6. + 44. + 10. + text_w + 14. + 2.;
+        let box_h = 6. + 44. + 6. + 2.;
         let area = window.bounds().size;
-        let mut x = cursor.x.as_f32() + BOX_OFFSET;
-        let mut y = cursor.y.as_f32() + BOX_OFFSET;
-        if x + box_w > area.width.as_f32() {
-            x = cursor.x.as_f32() - BOX_OFFSET - box_w;
-        }
-        if y + box_h > area.height.as_f32() {
-            y = cursor.y.as_f32() - BOX_OFFSET - box_h;
-        }
+        let (x, y) = match &self.loupe {
+            Some(loupe) => {
+                let side = loupe.side_now() + LOUPE_CHROME * 2.;
+                let x = loupe.center.x.as_f32() - box_w / 2.;
+                let below = loupe.center.y.as_f32() + side / 2. + LOUPE_LABEL_GAP;
+                let y = if below + box_h + EDGE > area.height.as_f32() {
+                    loupe.center.y.as_f32() - side / 2. - LOUPE_LABEL_GAP - box_h
+                } else {
+                    below
+                };
+                (x.clamp(EDGE, (area.width.as_f32() - box_w - EDGE).max(EDGE)), y)
+            }
+            None => {
+                let mut x = cursor.x.as_f32() + BOX_OFFSET;
+                let mut y = cursor.y.as_f32() + BOX_OFFSET;
+                if x + box_w + EDGE > area.width.as_f32() {
+                    x = cursor.x.as_f32() - BOX_OFFSET - box_w;
+                }
+                if y + box_h + EDGE > area.height.as_f32() {
+                    y = cursor.y.as_f32() - BOX_OFFSET - box_h;
+                }
+                (x, y)
+            }
+        };
 
         div()
             .absolute()
             .left(px(x))
             .top(px(y))
-            .p_2()
+            .pl(px(6.))
+            .pr(px(14.))
+            .py(px(6.))
             .flex()
             .items_center()
-            .gap_2()
-            .bg(theme.popover)
-            .text_color(theme.popover_foreground)
+            .gap(px(10.))
+            .bg(p.surface)
+            .text_color(p.foreground)
+            .font_family(theme::ui_font())
             .border_1()
-            .border_color(theme.border)
-            .rounded(theme.radius_lg)
-            .shadow_lg()
+            .border_color(p.border)
+            .rounded(px(10.))
+            .shadow(p.shadow_md.clone())
             .child(
                 div()
-                    .size(px(32.))
-                    .flex_shrink_0()
-                    .rounded(theme.radius)
+                    .size(px(44.))
+                    .flex_none()
+                    .rounded(px(6.))
                     .border_1()
-                    .border_color(theme.border)
+                    .border_color(p.swatch_border())
                     .bg(fill(color)),
             )
             .child(
@@ -434,16 +466,17 @@ impl PickerOverlay {
                     .flex()
                     .flex_col()
                     .gap(px(2.))
-                    .child(div().text_sm().font_weight(gpui_kit::FontWeight::SEMIBOLD).child(text))
-                    .child(div().text_xs().text_color(theme.muted_foreground).child(name)),
+                    .child(div().ts(15., 20.).font_weight(FontWeight::SEMIBOLD).whitespace_nowrap().child(text))
+                    .child(div().ts(13., 18.).text_color(p.muted).whitespace_nowrap().child(name)),
             )
     }
 }
 
 impl Render for PickerOverlay {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let loupe = self.loupe.as_ref().map(|l| self.loupe_view(l, window, cx).into_any_element());
-        let color_box = self.cursor.map(|c| self.color_box(c, window, cx));
+        let p = theme::of(window);
+        let loupe = self.loupe.as_ref().map(|l| self.loupe_view(l, window, p).into_any_element());
+        let color_box = self.cursor.map(|c| self.color_box(c, window, p, cx));
         let image = img(self.image.clone())
             .absolute()
             .left(px(self.image_offset.0))

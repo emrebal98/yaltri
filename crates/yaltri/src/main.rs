@@ -4,11 +4,15 @@
 mod assets;
 mod color_editor;
 mod daemon;
+mod i18n;
 mod launcher;
 mod picker;
 mod picker_zoom;
 mod settings_view;
 mod shortcut_input;
+mod theme;
+mod ui;
+mod update;
 
 use std::process::ExitCode;
 

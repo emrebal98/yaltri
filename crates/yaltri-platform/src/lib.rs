@@ -7,7 +7,7 @@ pub mod hookkeys;
 #[cfg(windows)]
 pub mod powertoys;
 pub mod hotkeys;
-mod icon;
+pub mod icon;
 pub mod ipc;
 #[cfg(windows)]
 pub mod keygrab;

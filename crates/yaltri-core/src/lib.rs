@@ -10,6 +10,6 @@ pub mod tool;
 
 pub use command::Command;
 pub use history::History;
-pub use search::{ItemAction, Scope, SearchItem, SearchProvider};
+pub use search::{ItemAction, ItemKind, Scope, SearchItem, SearchProvider};
 pub use settings::Settings;
 pub use tool::ToolId;

@@ -32,7 +32,18 @@ pub struct Hotkeys {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HotkeyError {
     pub tool: ToolId,
-    pub message: String,
+    pub kind: HotkeyErrorKind,
+}
+
+/// Why a shortcut does not work; the UI turns this into a localized message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HotkeyErrorKind {
+    /// The spec does not parse (detail is the parser's English message).
+    Invalid(String),
+    /// Another program or the OS holds the combination.
+    InUse,
+    /// PowerToys uses the same combination in this module; it may win.
+    SharedWithPowerToys(String),
 }
 
 impl Hotkeys {
@@ -81,20 +92,14 @@ impl Hotkeys {
             let hk = match parse(spec) {
                 Ok(hk) => hk,
                 Err(e) => {
-                    errors.push(HotkeyError { tool: *tool, message: e.to_string() });
+                    errors.push(HotkeyError { tool: *tool, kind: HotkeyErrorKind::Invalid(e.to_string()) });
                     continue;
                 }
             };
             #[cfg(windows)]
             if let Some(module) = crate::hookkeys::combo_from_spec(spec).and_then(|c| crate::powertoys::owner_of(&c)) {
                 // Still registered below: it works as soon as PowerToys lets go.
-                errors.push(HotkeyError {
-                    tool: *tool,
-                    message: format!(
-                        "Bu kısayolu PowerToys da kullanıyor ({module}); tuşa basınca PowerToys açılıyor. \
-                         PowerToys ayarlarında {module} kısayolunu değiştirin veya modülü kapatın."
-                    ),
-                });
+                errors.push(HotkeyError { tool: *tool, kind: HotkeyErrorKind::SharedWithPowerToys(module) });
             }
             match self.manager.register(hk) {
                 Ok(()) => {
@@ -110,10 +115,7 @@ impl Hotkeys {
                         hooked.push((combo, *tool));
                         continue;
                     }
-                    errors.push(HotkeyError {
-                        tool: *tool,
-                        message: format!("{spec} başka bir program veya Windows tarafından kullanılıyor. Farklı bir kısayol seçin."),
-                    });
+                    errors.push(HotkeyError { tool: *tool, kind: HotkeyErrorKind::InUse });
                 }
             }
         }
@@ -138,11 +140,9 @@ impl Hotkeys {
                 Ok(h) => self.hook = Some(h),
                 Err(e) => {
                     tracing::warn!("keyboard hook unavailable: {e:#}");
-                    errors.extend(hooked.iter().map(|(_, tool)| HotkeyError {
-                        tool: *tool,
-                        message: "Bu kısayol başka bir program veya Windows tarafından kullanılıyor. Farklı bir kısayol seçin."
-                            .into(),
-                    }));
+                    errors.extend(
+                        hooked.iter().map(|(_, tool)| HotkeyError { tool: *tool, kind: HotkeyErrorKind::InUse }),
+                    );
                     return;
                 }
             }

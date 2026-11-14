@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use yaltri_core::{ItemAction, SearchItem, SearchProvider};
+use yaltri_core::{ItemAction, ItemKind, SearchItem, SearchProvider};
 
 /// Hard ceiling per evaluation so input like `10^10^10` cannot freeze search.
 const TIMEOUT: Duration = Duration::from_millis(150);
@@ -53,8 +53,8 @@ impl SearchProvider for CalcProvider {
                 // Copy the bare value: "approx. 3.10 mi" -> "3.10 mi".
                 action: ItemAction::CopyText(result.trim_start_matches("approx. ").to_owned()),
                 title: result,
-                subtitle: format!("{} — Enter ile kopyala", query.trim()),
-                provider: "calc",
+                subtitle: query.trim().to_owned(),
+                kind: ItemKind::Calc,
                 score: SCORE,
                 icon: None,
             })

@@ -38,12 +38,27 @@ impl ItemAction {
     }
 }
 
+/// What a result is; the launcher picks its icon, wording and filter by it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ItemKind {
+    /// Calculator result; `subtitle` is the expression.
+    Calc,
+    /// Installed app; `subtitle` is where it was found.
+    App,
+    /// Installed game; `subtitle` names its launcher.
+    Game,
+    /// File; `subtitle` is its folder.
+    File,
+    /// Folder; `subtitle` is its parent folder.
+    Folder,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct SearchItem {
     pub title: String,
+    /// Raw detail for the kind (see `ItemKind`); the UI words it.
     pub subtitle: String,
-    /// Which provider produced this item (`calc`, `files`, `apps`, ...).
-    pub provider: &'static str,
+    pub kind: ItemKind,
     /// Higher sorts first. Providers return 0..=1000; the launcher merges
     /// results from all providers by this score.
     pub score: u32,
@@ -66,14 +81,13 @@ impl Scope {
     /// In the order the launcher shows them.
     pub const ALL: [Scope; 4] = [Scope::All, Scope::Apps, Scope::Files, Scope::Games];
 
-    /// Whether an item from `provider` belongs here (apps and games share
-    /// one provider but tag their items `apps` / `games`).
-    pub fn admits(self, provider: &str) -> bool {
+    /// Whether an item of `kind` belongs here.
+    pub fn admits(self, kind: ItemKind) -> bool {
         match self {
             Scope::All => true,
-            Scope::Apps => provider == "apps",
-            Scope::Files => provider == "files",
-            Scope::Games => provider == "games",
+            Scope::Apps => kind == ItemKind::App,
+            Scope::Files => matches!(kind, ItemKind::File | ItemKind::Folder),
+            Scope::Games => kind == ItemKind::Game,
         }
     }
 
@@ -155,7 +169,7 @@ pub fn search_all(
         .iter()
         .filter(|p| scope.queries(p.id()))
         .flat_map(|p| p.query_scoped(query, scope))
-        .filter(|item| scope.admits(item.provider))
+        .filter(|item| scope.admits(item.kind))
         .collect();
     for item in &mut items {
         item.score += boost(item);
@@ -172,6 +186,14 @@ mod tests {
 
     struct Fixed(&'static str, Vec<u32>);
 
+    fn kind_of(provider: &str) -> ItemKind {
+        match provider {
+            "files" => ItemKind::File,
+            "apps" => ItemKind::App,
+            _ => ItemKind::Calc,
+        }
+    }
+
     impl SearchProvider for Fixed {
         fn id(&self) -> &'static str {
             self.0
@@ -182,7 +204,7 @@ mod tests {
                 .map(|&score| SearchItem {
                     title: format!("{q}-{score}"),
                     subtitle: String::new(),
-                    provider: self.0,
+                    kind: kind_of(self.0),
                     score,
                     action: ItemAction::CopyText(String::new()),
                     icon: None,
@@ -197,8 +219,12 @@ mod tests {
             vec![Box::new(Fixed("a", vec![10, 500])), Box::new(Fixed("b", vec![900, 20]))];
         let scores: Vec<u32> = search_all(&providers, "x", Scope::All, 3, &|_| 0).iter().map(|i| i.score).collect();
         assert_eq!(scores, vec![900, 500, 20]);
-        let boosted: Vec<u32> =
-            search_all(&providers, "x", Scope::All, 1, &|i| if i.score == 10 { 1000 } else { 0 }).iter().map(|i| i.score).collect();
+        let boosted: Vec<u32> = search_all(&providers, "x", Scope::All, 1, &|i| {
+            if i.score == 10 { 1000 } else { 0 }
+        })
+        .iter()
+        .map(|i| i.score)
+        .collect();
         assert_eq!(boosted, vec![1010]);
     }
 
@@ -212,11 +238,11 @@ mod tests {
     fn scopes_keep_only_their_kind() {
         let providers: Vec<Box<dyn SearchProvider>> =
             vec![Box::new(Fixed("files", vec![900])), Box::new(Fixed("apps", vec![10]))];
-        let only = |scope| search_all(&providers, "x", scope, 10, &|_| 0).iter().map(|i| i.provider).collect::<Vec<_>>();
-        assert_eq!(only(Scope::Files), ["files"]);
-        assert_eq!(only(Scope::Apps), ["apps"]);
+        let only = |scope| search_all(&providers, "x", scope, 10, &|_| 0).iter().map(|i| i.kind).collect::<Vec<_>>();
+        assert_eq!(only(Scope::Files), [ItemKind::File]);
+        assert_eq!(only(Scope::Apps), [ItemKind::App]);
         assert!(only(Scope::Games).is_empty());
-        assert_eq!(only(Scope::All), ["files", "apps"]);
+        assert_eq!(only(Scope::All), [ItemKind::File, ItemKind::App]);
     }
 
     #[test]

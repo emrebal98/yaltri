@@ -7,7 +7,7 @@ use std::time::Duration;
 use anyhow::Result;
 use futures::StreamExt as _;
 use futures::channel::mpsc;
-use gpui_kit::{App, AnyWindowHandle, Entity, Global, QuitMode};
+use gpui_kit::{AnyWindowHandle, App, Entity, Global, QuitMode};
 use yaltri_apps::AppsProvider;
 use yaltri_calc::CalcProvider;
 use yaltri_color::{ColorHistory, Rgb};
@@ -40,6 +40,8 @@ pub struct Daemon {
     pub color_editor_window: Option<AnyWindowHandle>,
     tx: CommandSender,
     tray: Option<Tray>,
+    /// App theme the tray menu icons were drawn for.
+    tray_apps_light: bool,
     hotkeys: Option<Hotkeys>,
     /// True while a shortcut is being recorded in settings.
     hotkeys_suspended: bool,
@@ -50,6 +52,8 @@ pub struct Daemon {
 impl Global for Daemon {}
 
 const HOTKEY_RETRY: Duration = Duration::from_secs(20);
+/// How often the tray checks the taskbar theme (no event for it).
+const THEME_POLL: Duration = Duration::from_secs(5);
 
 pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<()> {
     let loaded = Settings::load(&paths.settings_file())?;
@@ -65,6 +69,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
         .with_quit_mode(QuitMode::Explicit)
         .run(move |cx: &mut App| {
             gpui_kit::init(cx);
+            crate::i18n::set_language(&loaded.settings.general.language);
             sync_theme(cx);
 
             let history = History::load(&paths.history_file());
@@ -73,9 +78,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 paths,
                 session,
                 settings: loaded.settings,
-                settings_warning: loaded
-                    .recovered_from
-                    .map(|e| format!("Ayar dosyası bozuktu, varsayılanlara dönüldü (yedek: settings.toml.bak): {e}")),
+                settings_warning: loaded.recovered_from.map(|e| e.to_string()),
                 hotkey_errors: Vec::new(),
                 providers: Arc::new(Vec::new()),
                 history: Arc::new(Mutex::new(history)),
@@ -87,6 +90,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 color_editor_window: None,
                 tx: tx.clone(),
                 tray: None,
+                tray_apps_light: yaltri_platform::icon::apps_use_light_theme(),
                 hotkeys: None,
                 hotkeys_suspended: false,
                 files: None,
@@ -106,6 +110,14 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 loop {
                     cx.background_executor().timer(HOTKEY_RETRY).await;
                     cx.update(|cx| cx.global_mut::<Daemon>().retry_failed_hotkeys());
+                }
+            })
+            .detach();
+
+            cx.spawn(async move |cx| {
+                loop {
+                    cx.background_executor().timer(THEME_POLL).await;
+                    cx.update(|cx| cx.global_mut::<Daemon>().refresh_tray_theme());
                 }
             })
             .detach();
@@ -138,12 +150,52 @@ impl Daemon {
         self.apply_hotkeys();
     }
 
+    /// Search · Color picker · Settings, separator, Quit.
     fn tray_menu(&self) -> Vec<Option<tray::MenuEntry>> {
-        let enabled: Vec<ToolId> = ToolId::ALL
+        use crate::i18n::t;
+        let entry = |label: &str, command: Command, icon: &str, shortcut: Option<String>| {
+            Some(tray::MenuEntry {
+                label: label.to_owned(),
+                command,
+                icon_svg: crate::assets::svg(&format!("icons/{icon}.svg")),
+                shortcut,
+            })
+        };
+        let mut items: Vec<Option<tray::MenuEntry>> = ToolId::ALL
             .into_iter()
             .filter(|t| self.settings.is_enabled(*t) && is_implemented(*t))
+            .map(|tool| {
+                let icon = match tool {
+                    ToolId::Launcher => "search",
+                    ToolId::Picker => "pipette",
+                };
+                let spec = self.settings.hotkey(tool);
+                let shortcut = (!spec.is_empty() && self.session.supports_global_hotkeys())
+                    .then(|| yaltri_platform::keys::display_parts(spec).join("+"));
+                entry(crate::settings_view::tool_name(tool), Command::Toggle(tool), icon, shortcut)
+            })
             .collect();
-        tray::menu_for(&enabled)
+        items.push(entry(t("tray.settings"), Command::Settings, "settings", None));
+        items.push(None);
+        items.push(entry(t("tray.quit"), Command::Quit, "power", None));
+        items
+    }
+
+    /// Follows taskbar/app theme changes in the tray icon and menu.
+    fn refresh_tray_theme(&mut self) {
+        let apps_light = yaltri_platform::icon::apps_use_light_theme();
+        let menu = (apps_light != self.tray_apps_light).then(|| self.tray_menu());
+        self.tray_apps_light = apps_light;
+        if let Some(tray) = self.tray.as_mut() {
+            if let Err(e) = tray.refresh_theme() {
+                tracing::warn!("updating tray icon failed: {e:#}");
+            }
+            if let Some(menu) = menu
+                && let Err(e) = tray.set_menu(menu)
+            {
+                tracing::warn!("updating tray menu failed: {e:#}");
+            }
+        }
     }
 
     /// Releases every global hotkey (while a shortcut is being recorded, so
@@ -171,7 +223,7 @@ impl Daemon {
         let errors = hotkeys.apply(&bindings);
         if errors != self.hotkey_errors {
             for e in &errors {
-                tracing::warn!(tool = %e.tool, "{}", e.message);
+                tracing::warn!(tool = %e.tool, kind = ?e.kind, "shortcut problem");
             }
             if errors.is_empty() {
                 tracing::info!("all shortcuts active");
@@ -194,6 +246,9 @@ impl Daemon {
             && let Some(apps) = &self.apps
         {
             apps.set_games(settings.games.clone());
+        }
+        if settings.general.language != self.settings.general.language {
+            crate::i18n::set_language(&settings.general.language);
         }
         self.settings = settings;
         self.settings_warning = None;
@@ -266,6 +321,15 @@ impl Daemon {
         if let Err(e) = self.colors.save(&self.paths.colors_file()) {
             tracing::warn!("saving colors failed: {e:#}");
         }
+        self.save_colors();
+    }
+
+    pub fn clear_colors(&mut self) {
+        self.colors.clear();
+        self.save_colors();
+    }
+
+    fn save_colors(&self) {
     }
 
     /// Remembers that the user opened `key`, for ranking.
@@ -286,7 +350,7 @@ pub fn is_implemented(tool: ToolId) -> bool {
 /// Light/dark from the OS. Re-read before every command (each one opens or
 /// closes a window), so a theme change in system settings is picked up.
 fn sync_theme(cx: &mut App) {
-    gpui_kit::component::Theme::sync_system_appearance(None, cx);
+    crate::theme::sync_components(cx);
 }
 
 fn handle(cmd: Command, cx: &mut App) {

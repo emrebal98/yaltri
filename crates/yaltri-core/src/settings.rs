@@ -25,6 +25,8 @@ pub struct Settings {
 #[serde(default)]
 pub struct GeneralSettings {
     pub start_with_system: bool,
+    /// UI language: "auto" (follow the system), "en" or "tr".
+    pub language: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -105,7 +107,7 @@ impl Default for Settings {
 
 impl Default for GeneralSettings {
     fn default() -> Self {
-        Self { start_with_system: false }
+        Self { start_with_system: false, language: "auto".into() }
     }
 }
 

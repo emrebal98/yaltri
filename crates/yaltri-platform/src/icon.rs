@@ -1,44 +1,126 @@
-//! Procedural tray icon (a four-pointed sparkle, for *yaltrı-* "to glitter")
-//! so the binary needs no image assets yet.
+//! Tray and menu icons, rasterized from the brand / Lucide SVGs.
+//!
+//! The tray mark is monochrome: white on dark taskbars, #1A1A1A on light
+//! ones. The 16 px size has its own drawing; larger sizes scale the 24 px one.
 
-pub const SIZE: u32 = 32;
+use resvg::{tiny_skia, usvg};
 
-/// Straight (non-premultiplied) RGBA, row-major.
-pub fn rgba() -> Vec<u8> {
-    let mut out = Vec::with_capacity((SIZE * SIZE * 4) as usize);
-    let c = (SIZE as f32 - 1.0) / 2.0;
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let dx = (x as f32 - c).abs() / c;
-            let dy = (y as f32 - c).abs() / c;
-            // Astroid-like star: |x|^0.5 + |y|^0.5 <= 1, plus a soft core.
-            let star = dx.sqrt() + dy.sqrt();
-            let core = (dx * dx + dy * dy).sqrt();
-            let alpha = if star <= 1.0 {
-                1.0
-            } else if star <= 1.12 {
-                1.0 - (star - 1.0) / 0.12
-            } else {
-                0.0
-            }
-            .max(if core < 0.35 { 1.0 - core / 0.35 } else { 0.0 });
-            // Warm gold fading to white at the center.
-            let w = (1.0 - core).clamp(0.0, 1.0);
-            let r = 255.0;
-            let g = 196.0 + 59.0 * w;
-            let b = 64.0 + 191.0 * w * w;
-            out.extend_from_slice(&[r as u8, g as u8, b as u8, (alpha * 255.0) as u8]);
-        }
+const TRAY_16_WHITE: &str = include_str!("../../../design/brand/tray-16-white.svg");
+const TRAY_16_DARK: &str = include_str!("../../../design/brand/tray-16-dark.svg");
+const TRAY_24_WHITE: &str = include_str!("../../../design/brand/tray-24-white.svg");
+const TRAY_24_DARK: &str = include_str!("../../../design/brand/tray-24-dark.svg");
+
+/// Straight (non-premultiplied) RGBA of `svg` drawn into a `size`² square,
+/// with `currentColor` replaced by `color` (`#RRGGBB`) when given.
+pub fn svg_rgba(svg: &str, size: u32, color: Option<&str>) -> Option<Vec<u8>> {
+    let svg = match color {
+        Some(c) => svg.replace("currentColor", c),
+        None => svg.to_owned(),
+    };
+    let tree = usvg::Tree::from_str(&svg, &usvg::Options::default()).ok()?;
+    let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
+    let scale = size as f32 / tree.size().width().max(tree.size().height());
+    resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    Some(
+        pixmap
+            .pixels()
+            .iter()
+            .flat_map(|p| {
+                let c = p.demultiply();
+                [c.red(), c.green(), c.blue(), c.alpha()]
+            })
+            .collect(),
+    )
+}
+
+/// The tray mark at `size` px for a light or dark taskbar.
+pub fn tray_rgba(size: u32, light_taskbar: bool) -> Vec<u8> {
+    let svg = match (size <= 20, light_taskbar) {
+        (true, false) => TRAY_16_WHITE,
+        (true, true) => TRAY_16_DARK,
+        (false, false) => TRAY_24_WHITE,
+        (false, true) => TRAY_24_DARK,
+    };
+    svg_rgba(svg, size, None).unwrap_or_else(|| vec![0; (size * size * 4) as usize])
+}
+
+/// Whether the taskbar uses the light theme (Windows "system" mode, which
+/// can differ from the apps mode). Linux panels are assumed dark.
+pub fn taskbar_is_light() -> bool {
+    #[cfg(windows)]
+    {
+        read_personalize_dword("SystemUsesLightTheme").is_some_and(|v| v != 0)
     }
-    out
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+/// Whether apps (and so native menus) use the light theme.
+pub fn apps_use_light_theme() -> bool {
+    #[cfg(windows)]
+    {
+        read_personalize_dword("AppsUseLightTheme").is_none_or(|v| v != 0)
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+#[cfg(windows)]
+fn read_personalize_dword(name: &str) -> Option<u32> {
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+    let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let key = wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+    let value = wide(name);
+    let mut data: u32 = 0;
+    let mut len = std::mem::size_of::<u32>() as u32;
+    // SAFETY: valid NUL-terminated strings and a DWORD-sized out buffer.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&mut data as *mut u32).cast(),
+            &mut len,
+        )
+    };
+    (status == 0).then_some(data)
 }
 
 /// ARGB32 in network byte order, as StatusNotifierItem (ksni) expects.
 #[cfg(target_os = "linux")]
-pub fn argb() -> Vec<u8> {
-    let mut data = rgba();
-    for px in data.chunks_exact_mut(4) {
+pub fn argb(mut rgba: Vec<u8>) -> Vec<u8> {
+    for px in rgba.chunks_exact_mut(4) {
         px.rotate_right(1);
     }
-    data
+    rgba
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tray_icons_rasterize_with_opaque_pixels() {
+        for (size, light) in [(16, false), (16, true), (32, false), (32, true)] {
+            let rgba = tray_rgba(size, light);
+            assert_eq!(rgba.len(), (size * size * 4) as usize);
+            let opaque = rgba.chunks_exact(4).filter(|p| p[3] > 200).count();
+            assert!(opaque > (size * size / 20) as usize, "{size}px light={light}: mark is drawn");
+            let expected = if light { 0x1A } else { 0xFF };
+            assert!(rgba.chunks_exact(4).filter(|p| p[3] == 255).all(|p| p[0] == expected));
+        }
+    }
+
+    #[test]
+    fn recolors_current_color() {
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="currentColor"/></svg>"#;
+        let rgba = svg_rgba(svg, 4, Some("#FF0000")).unwrap();
+        assert_eq!(&rgba[..4], &[255, 0, 0, 255]);
+    }
 }

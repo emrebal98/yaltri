@@ -11,15 +11,6 @@ pub enum RecordError {
     UnsupportedKey,
 }
 
-impl RecordError {
-    pub fn message(self) -> &'static str {
-        match self {
-            RecordError::NeedsModifier => "Ctrl, Alt, Shift veya Win ile birlikte basın (F tuşları hariç)",
-            RecordError::UnsupportedKey => "Bu tuş kısayol olarak kullanılamıyor",
-        }
-    }
-}
-
 /// Name shown for the platform ("Windows"/"Super") key.
 pub const SUPER_NAME: &str = if cfg!(windows) { "Win" } else { "Super" };
 

@@ -1,25 +1,32 @@
-//! Settings window, opened from the tray: enable/disable tools and edit their
-//! shortcuts. Edits are staged and written on "Kaydet".
+//! Settings window: one section per tool (its master switch in the header,
+//! everything that belongs to it in one card), then "About". Shortcuts and
+//! master switches apply at once; the rest is staged until "Save".
 
-use gpui_kit::component::{ActiveTheme as _, Disableable as _};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::switch::Switch;
-use gpui_kit::prelude::FluentBuilder as _;
 use std::time::{Duration, SystemTime};
 
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, AppContext as _, Bounds, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _, Render,
-    SharedString, StatefulInteractiveElement as _,
-    Styled as _, Task, TitlebarOptions, Window, WindowBounds, WindowOptions, div, px, size,
+    AnyElement, App, AppContext as _, Context, Div, Entity, FontWeight, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window, anchored,
+    deferred, div, img, px,
 };
-use yaltri_files::Phase;
-use yaltri_core::{Settings, ToolId};
-use yaltri_platform::hotkeys;
-
 use yaltri_apps::games::Launcher;
+use yaltri_color::Format;
+use yaltri_core::{Settings, ToolId};
+use yaltri_files::Phase;
+use yaltri_platform::hotkeys::{self, HotkeyErrorKind};
+use yaltri_platform::keys;
 
 use crate::daemon::{Daemon, is_implemented};
+use crate::i18n::{t, tf};
 use crate::shortcut_input::{ShortcutChanged, ShortcutInput};
+use crate::theme::{self, Palette, R_MD, R_SM};
+use crate::ui::{self, ButtonKind, TextStyle as _};
+use crate::update::{self, UpdateState};
+
+const WIDTH: f32 = 560.;
+const HEIGHT: f32 = 820.;
+const TOAST_FOR: Duration = Duration::from_millis(1960);
 
 pub fn open(cx: &mut App) {
     if let Some(handle) = cx.global::<Daemon>().settings_window
@@ -29,12 +36,7 @@ pub fn open(cx: &mut App) {
         return;
     }
 
-    let options = WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(560.), px(820.)), cx))),
-        titlebar: Some(TitlebarOptions { title: Some("Yaltri Ayarları".into()), ..Default::default() }),
-        app_id: Some("yaltri".into()),
-        ..Default::default()
-    };
+    let options = ui::frameless_window(t("settings.title").into(), WIDTH, HEIGHT, cx);
     match gpui_kit::open_window(options, cx, |window, cx| cx.new(|cx| SettingsView::new(window, cx))) {
         Ok((handle, _)) => {
             cx.global_mut::<Daemon>().settings_window = Some(handle);
@@ -45,10 +47,20 @@ pub fn open(cx: &mut App) {
     }
 }
 
+/// Localized tool name.
+pub fn tool_name(tool: ToolId) -> &'static str {
+    match tool {
+        ToolId::Launcher => t("tool.launcher"),
+        ToolId::Picker => t("tool.picker"),
+    }
+}
+
 struct ToolRow {
     tool: ToolId,
     enabled: bool,
     hotkey: Entity<ShortcutInput>,
+    /// Why the last recorded shortcut was not taken.
+    refused: Option<SharedString>,
 }
 
 pub struct SettingsView {
@@ -57,9 +69,14 @@ pub struct SettingsView {
     apps_enabled: bool,
     games: yaltri_core::settings::GamesSettings,
     picker_open_editor: bool,
-    /// Feedback from the last save, or startup warnings. (`is_error`, text)
-    status: Option<(bool, SharedString)>,
-    /// Re-renders once a second so the index status stays live.
+    copy_format: Format,
+    format_menu: bool,
+    /// Startup warning (settings file was unreadable).
+    warning: Option<SharedString>,
+    /// (`is_error`, text).
+    toast: Option<(bool, SharedString)>,
+    update: UpdateState,
+    _toast_timer: Option<Task<()>>,
     _refresh: Task<()>,
     _subscriptions: Vec<gpui_kit::Subscription>,
 }
@@ -68,18 +85,19 @@ impl SettingsView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let daemon = cx.global::<Daemon>();
         let settings = daemon.settings.clone();
-        let status = daemon.settings_warning.clone().map(|w| (true, w.into()));
-        let mut subscriptions = Vec::new();
+        let warning = daemon.settings_warning.clone().map(|e| tf("settings.recovered", &[("error", &e)]).into());
+        let mut subscriptions = vec![theme::follow_system(window, cx)];
         let rows = ToolId::ALL
             .into_iter()
             .map(|tool| {
                 let value = settings.hotkey(tool).to_owned();
                 let hotkey = cx.new(|cx| ShortcutInput::new(tool.as_str(), value, window, cx));
-                // A recorded shortcut takes effect immediately, like PowerToys.
+                // A recorded shortcut takes effect immediately.
                 subscriptions.push(cx.subscribe(&hotkey, |this: &mut Self, _, _: &ShortcutChanged, cx| this.save(cx)));
-                ToolRow { tool, enabled: settings.is_enabled(tool), hotkey }
+                ToolRow { tool, enabled: settings.is_enabled(tool), hotkey, refused: None }
             })
             .collect();
+        // Re-render once a second so the index status stays live.
         let refresh = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
@@ -94,18 +112,45 @@ impl SettingsView {
             apps_enabled: settings.files.apps_enabled,
             games: settings.games.clone(),
             picker_open_editor: settings.picker.open_editor,
-            status,
+            copy_format: settings.picker.copy_format.parse().unwrap_or(Format::Hex),
+            format_menu: false,
+            warning,
+            toast: None,
+            update: UpdateState::Idle,
+            _toast_timer: None,
             _refresh: refresh,
             _subscriptions: subscriptions,
         }
     }
 
+    fn row(&self, tool: ToolId) -> &ToolRow {
+        self.rows.iter().find(|r| r.tool == tool).expect("one row per tool")
+    }
+
+    fn row_mut(&mut self, tool: ToolId) -> &mut ToolRow {
+        self.rows.iter_mut().find(|r| r.tool == tool).expect("one row per tool")
+    }
+
+    fn flash(&mut self, is_error: bool, text: SharedString, cx: &mut Context<Self>) {
+        self.toast = Some((is_error, text));
+        self._toast_timer = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(TOAST_FOR).await;
+            let _ = this.update(cx, |this, cx| {
+                this.toast = None;
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
     fn save(&mut self, cx: &mut Context<Self>) {
-        let mut settings: Settings = cx.global::<Daemon>().settings.clone();
-        for row in &self.rows {
+        let previous: Settings = cx.global::<Daemon>().settings.clone();
+        let mut settings = previous.clone();
+        for row in &mut self.rows {
+            row.refused = None;
             let spec = row.hotkey.read(cx).value().to_owned();
             if row.enabled && !spec.is_empty() && hotkeys::parse(&spec).is_err() {
-                self.status = Some((true, format!("{}: geçersiz kısayol '{spec}'", row.tool.display_name()).into()));
+                row.refused = Some(t("settings.shortcut.invalid").into());
                 cx.notify();
                 return;
             }
@@ -116,269 +161,687 @@ impl SettingsView {
         settings.files.apps_enabled = self.apps_enabled;
         settings.games = self.games.clone();
         settings.picker.open_editor = self.picker_open_editor;
-        if let Some((a, b)) = settings.hotkey_conflicts().first() {
-            self.status = Some((
-                true,
-                format!("{} ve {} aynı kısayolu kullanıyor", a.display_name(), b.display_name()).into(),
-            ));
+        settings.picker.copy_format = self.copy_format.key().into();
+
+        // Two tools on one shortcut: keep the second one's old shortcut.
+        if let Some((a, b)) = settings.hotkey_conflicts().first().copied() {
+            let old = previous.hotkey(b).to_owned();
+            let row = self.row_mut(b);
+            row.refused = Some(tf("settings.shortcut.same_as", &[("tool", tool_name(a))]).into());
+            row.hotkey.update(cx, |h, cx| h.set_value(old, cx));
             cx.notify();
             return;
         }
 
-        let daemon = cx.global_mut::<Daemon>();
-        self.status = Some(match daemon.update_settings(settings) {
-            Ok(()) => (false, "Kaydedildi.".into()),
-            Err(e) => (true, format!("Kaydedilemedi: {e:#}").into()),
-        });
-        cx.notify();
-    }
-}
-
-/// `1893440` -> `1.893.440`
-fn thousands(n: usize) -> String {
-    let digits = n.to_string();
-    let mut out = String::new();
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
-            out.push('.');
+        if let Err(e) = cx.global_mut::<Daemon>().update_settings(settings.clone()) {
+            self.flash(true, tf("settings.save_failed", &[("error", &format!("{e:#}"))]).into(), cx);
+            return;
         }
-        out.push(c);
+
+        // A new shortcut another program holds: go back to the old one.
+        let in_use: Vec<ToolId> = cx
+            .global::<Daemon>()
+            .hotkey_errors
+            .iter()
+            .filter(|e| e.kind == HotkeyErrorKind::InUse && settings.hotkey(e.tool) != previous.hotkey(e.tool))
+            .map(|e| e.tool)
+            .collect();
+        if !in_use.is_empty() {
+            for tool in &in_use {
+                let old = previous.hotkey(*tool).to_owned();
+                settings.set_hotkey(*tool, old.clone());
+                let shown = keys::display_parts(&old).join(" + ");
+                let row = self.row_mut(*tool);
+                row.refused = Some(if old.is_empty() {
+                    t("settings.shortcut.in_use").into()
+                } else {
+                    tf("settings.shortcut.in_use_kept", &[("old", &shown)]).into()
+                });
+                row.hotkey.update(cx, |h, cx| h.set_value(old, cx));
+            }
+            let _ = cx.global_mut::<Daemon>().update_settings(settings);
+            cx.notify();
+            return;
+        }
+        self.flash(false, t("settings.saved").into(), cx);
     }
-    out
+
+    /// Master switch: applies right away so the shortcut is (un)registered.
+    fn set_tool_enabled(&mut self, tool: ToolId, on: bool, cx: &mut Context<Self>) {
+        self.row_mut(tool).enabled = on;
+        self.save(cx);
+    }
+
+    fn check_updates(&mut self, cx: &mut Context<Self>) {
+        if self.update == UpdateState::Checking {
+            return;
+        }
+        self.update = UpdateState::Checking;
+        cx.notify();
+        let task = cx.background_executor().spawn(async { update::check() });
+        cx.spawn(async move |this, cx| {
+            let state = match task.await {
+                Ok(None) => UpdateState::UpToDate,
+                Ok(Some(v)) => UpdateState::Available(v),
+                Err(e) => {
+                    tracing::warn!("update check failed: {e:#}");
+                    UpdateState::Failed
+                }
+            };
+            let _ = this.update(cx, |this, cx| {
+                this.update = state;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// The message under a tool's shortcut field, if any.
+    fn shortcut_message(&self, tool: ToolId, cx: &App) -> Option<SharedString> {
+        let row = self.row(tool);
+        row.refused.clone().or_else(|| row.hotkey.read(cx).error()).or_else(|| {
+            cx.global::<Daemon>().hotkey_errors.iter().find(|e| e.tool == tool && row.enabled).map(|e| match &e.kind {
+                HotkeyErrorKind::InUse => t("settings.shortcut.in_use").into(),
+                HotkeyErrorKind::Invalid(_) => t("settings.shortcut.invalid").into(),
+                HotkeyErrorKind::SharedWithPowerToys(module) => {
+                    tf("settings.shortcut.powertoys", &[("module", module)]).into()
+                }
+            })
+        })
+    }
 }
 
-fn ago(t: SystemTime) -> String {
-    let secs = t.elapsed().map_or(0, |d| d.as_secs());
+/// `1893440` -> `1.9M`.
+fn compact(n: usize) -> String {
+    match n {
+        0..1_000 => n.to_string(),
+        1_000..1_000_000 => format!("{:.0}K", n as f64 / 1e3),
+        _ => format!("{:.1}M", n as f64 / 1e6),
+    }
+}
+
+fn ago(at: SystemTime) -> String {
+    let secs = at.elapsed().map_or(0, |d| d.as_secs());
     match secs {
-        0..60 => "az önce".into(),
-        60..3600 => format!("{} dk önce", secs / 60),
-        3600..86400 => format!("{} sa önce", secs / 3600),
-        _ => format!("{} gün önce", secs / 86400),
+        0..60 => t("time.just_now").into(),
+        60..3600 => tf("time.minutes_ago", &[("n", &(secs / 60).to_string())]),
+        3600..86400 => tf("time.hours_ago", &[("n", &(secs / 3600).to_string())]),
+        _ => tf("time.days_ago", &[("n", &(secs / 86400).to_string())]),
     }
 }
 
-fn index_status_text(daemon: &Daemon) -> String {
+/// (dot color, main line, detail line) for the file index.
+fn index_status(daemon: &Daemon, p: &Palette) -> (gpui_kit::Hsla, String, String) {
     let Some(s) = daemon.index_status() else {
-        return "Dosya araması kapalı.".into();
+        return (p.muted, t("settings.index.off").into(), String::new());
     };
     match s.phase {
-        Phase::Loading => "Önceki index yükleniyor…".into(),
-        Phase::Scanning { found } if s.entries > 0 => format!(
-            "Taranıyor… {} öğe bulundu. Arama bu sırada önceki index'le ({} öğe) çalışıyor.",
-            thousands(found),
-            thousands(s.entries)
-        ),
-        Phase::Scanning { found } => format!("İlk tarama… {} öğe bulundu.", thousands(found)),
+        Phase::Loading => (p.accent, t("settings.index.loading").into(), String::new()),
+        Phase::Scanning { found } => {
+            let main = tf("settings.index.scanning", &[("found", &compact(found))]);
+            let detail = if s.entries > 0 { t("settings.index.scanning_detail").into() } else { String::new() };
+            (p.accent, main, detail)
+        }
         Phase::Ready => {
-            let mut text = format!("{} öğe · {} MiB", thousands(s.entries), s.memory_bytes / (1 << 20));
+            let mut detail = tf("settings.index.size", &[("mib", &(s.memory_bytes / (1 << 20)).to_string())]);
             if let (Some(at), Some(took)) = (s.last_scan, s.last_scan_took) {
-                text += &format!(" · son tarama {} ({:.0} sn sürdü)", ago(at), took.as_secs_f32());
+                detail += " · ";
+                detail += &tf(
+                    "settings.index.last_scan",
+                    &[("ago", &ago(at)), ("secs", &format!("{:.0}", took.as_secs_f32()))],
+                );
             }
             if s.watched.is_empty() {
-                text += " · canlı izleme yok, periyodik taranıyor";
+                detail += " · ";
+                detail += t("settings.index.no_watch");
             }
-            text
+            (p.success, tf("settings.index.ready", &[("count", &compact(s.entries))]), detail)
         }
     }
 }
 
-impl Render for SettingsView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
-        let daemon = cx.global::<Daemon>();
-        let session = daemon.session;
-        let settings_path = daemon.paths.settings_file().display().to_string();
-        let index_text = index_status_text(daemon);
-        let hotkey_errors = daemon.hotkey_errors.clone();
-        let game_counts = daemon.game_counts();
-
-        let tool_rows = self.rows.iter().enumerate().map(|(ix, row)| {
-            let implemented = is_implemented(row.tool);
+fn section_header(title: &str, description: Option<&str>, toggle: Option<AnyElement>, p: &Palette) -> Div {
+    div()
+        .pt(px(20.))
+        .pb(px(10.))
+        .flex()
+        .items_center()
+        .gap(px(12.))
+        .child(
             div()
+                .flex_1()
+                .min_w_0()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .p_3()
-                .border_1()
-                .border_color(theme.border)
-                .rounded(theme.radius)
                 .child(
                     div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .child(
-                            div()
-                                .text_base()
-                                .child(row.tool.display_name())
-                                .when(!implemented, |d| {
-                                    d.child(div().text_xs().text_color(theme.muted_foreground).child("yakında"))
-                                }),
-                        )
-                        .child(
-                            Switch::new(("enabled", ix))
-                                .checked(row.enabled)
-                                .disabled(!implemented)
-                                .on_change(cx.listener(move |this, value: &bool, _, cx| {
-                                    this.rows[ix].enabled = *value;
-                                    cx.notify();
-                                })),
-                        ),
+                        .ts(20., 28.)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(p.foreground)
+                        .child(title.to_owned()),
                 )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(div().w(px(80.)).text_sm().text_color(theme.muted_foreground).child("Kısayol"))
-                        .child(div().flex_1().child(row.hotkey.clone())),
-                )
-                .when_some(
-                    hotkey_errors.iter().find(|e| e.tool == row.tool && row.enabled).map(|e| e.message.clone()),
-                    |d, msg| d.child(div().text_xs().text_color(theme.danger).child(msg)),
-                )
-                .when(row.tool == ToolId::Picker, |d| {
-                    d.child(
-                        Switch::new("picker-editor")
-                            .label("Seçimden sonra editörü aç")
-                            .checked(self.picker_open_editor)
-                            .on_change(cx.listener(|this, value: &bool, _, cx| {
-                                this.picker_open_editor = *value;
-                                cx.notify();
-                            })),
-                    )
-                })
-                .when(session.is_wayland() && implemented, |d| {
-                    d.child(div().text_xs().text_color(theme.muted_foreground).child(format!(
-                        "Wayland: bu kısayol uygulanamaz. Masaüstü ayarlarında özel kısayol olarak \
-                         `yaltri toggle {}` komutunu ekleyin.",
-                        row.tool
-                    )))
-                })
-        });
+                .when_some(description, |d, text| {
+                    d.child(div().ts(12., 16.).text_color(p.muted).child(text.to_owned()))
+                }),
+        )
+        .children(toggle)
+}
 
+/// Card that holds a tool's settings; dimmed and inert while the tool is off.
+fn card(enabled: bool, p: &Palette) -> Div {
+    div()
+        .relative()
+        .px(px(16.))
+        .pb(px(4.))
+        .flex()
+        .flex_col()
+        .rounded(px(R_MD))
+        .bg(p.surface)
+        .border_1()
+        .border_color(p.border)
+        .when(!enabled, |d| d.opacity(0.45))
+}
+
+/// Covers a card so nothing inside reacts while its tool is off.
+fn blocker() -> impl IntoElement {
+    div().id("blocker").absolute().top_0().left_0().size_full().occlude()
+}
+
+fn group_label(label: &str, right: Option<String>, p: &Palette) -> Div {
+    div()
+        .pt(px(14.))
+        .pb(px(4.))
+        .flex()
+        .items_center()
+        .border_t_1()
+        .border_color(p.border)
+        .child(
+            div()
+                .flex_1()
+                .ts(11., 14.)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(p.muted)
+                .child(label.to_uppercase()),
+        )
+        .when_some(right, |d, r| d.child(div().text_size(px(12.)).text_color(p.muted).child(r)))
+}
+
+/// A labelled row with a control on the right; `first` rows have no divider.
+fn setting_row(min_h: f32, first: bool, label: &str, hint: Option<&str>, p: &Palette) -> Div {
+    div()
+        .min_h(px(min_h))
+        .flex()
+        .items_center()
+        .gap(px(12.))
+        .when(!first, |d| d.border_t_1().border_color(p.border))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .child(div().ts(14., 20.).text_color(p.foreground).child(label.to_owned()))
+                .when_some(hint, |d, h| d.child(div().ts(12., 16.).text_color(p.muted).child(h.to_owned()))),
+        )
+}
+
+impl SettingsView {
+    fn shortcut_row(&self, tool: ToolId, p: &Palette, cx: &App) -> Div {
+        let message = self.shortcut_message(tool, cx);
+        let wayland = cx.global::<Daemon>().session.is_wayland();
         div()
-            .id("settings-root")
-            .size_full()
-            .overflow_y_scroll()
+            .py(px(12.))
             .flex()
             .flex_col()
-            .gap_3()
-            .p_4()
-            .bg(theme.background)
-            .text_color(theme.foreground)
-            .child(div().text_xl().child("Araçlar"))
-            .children(tool_rows)
-            .child(div().text_xl().child("Arama kaynakları"))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .p_3()
-                    .border_1()
-                    .border_color(theme.border)
-                    .rounded(theme.radius)
-                    .child(
-                        Switch::new("apps-enabled")
-                            .label("Uygulamalar")
-                            .checked(self.apps_enabled)
-                            .on_change(cx.listener(|this, value: &bool, _, cx| {
-                                this.apps_enabled = *value;
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        Switch::new("files-enabled")
-                            .label("Dosya ve klasörler")
-                            .checked(self.files_enabled)
-                            .on_change(cx.listener(|this, value: &bool, _, cx| {
-                                this.files_enabled = *value;
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .gap_2()
-                            .child(div().flex_1().min_w_0().text_xs().text_color(theme.muted_foreground).child(index_text))
-                            .child(
-                                div().flex_shrink_0().child(
-                                    Button::new("rescan")
-                                        .outline()
-                                        .label("Yeniden tara")
-                                        .on_click(cx.listener(|_, _, _, cx| cx.global::<Daemon>().rescan_files())),
-                                ),
-                            ),
-                    ),
-            )
-            .child(div().text_xl().child("Oyunlar"))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .p_3()
-                    .border_1()
-                    .border_color(theme.border)
-                    .rounded(theme.radius)
-                    .when(!self.apps_enabled, |d| {
-                        d.child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.muted_foreground)
-                                .child("Oyunlar uygulama aramasıyla birlikte çalışır; önce Uygulamalar'ı açın."),
-                        )
-                    })
-                    .children(Launcher::PLATFORM.iter().copied().map(|launcher| {
-                        let on = launcher.enabled_in(&self.games);
-                        let count = game_counts.get(&launcher).copied().unwrap_or(0);
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .child(
-                                Switch::new(launcher.display_name())
-                                    .label(launcher.display_name())
-                                    .checked(on)
-                                    .disabled(!self.apps_enabled)
-                                    .on_change(cx.listener(move |this, value: &bool, _, cx| {
-                                        launcher.set_in(&mut this.games, *value);
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(div().text_xs().text_color(theme.muted_foreground).child(if on && count > 0 {
-                                format!("{count} oyun")
-                            } else if on {
-                                "oyun bulunamadı".to_owned()
-                            } else {
-                                String::new()
-                            }))
-                    })),
-            )
-            .when_some(self.status.clone(), |d, (is_error, text)| {
-                d.child(
-                    div()
-                        .text_sm()
-                        .text_color(if is_error { theme.danger } else { theme.muted_foreground })
-                        .child(text),
-                )
-            })
-            .child(div().flex_1())
+            .gap(px(6.))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .justify_between()
-                    .child(div().text_xs().text_color(theme.muted_foreground).child(settings_path))
+                    .gap(px(12.))
                     .child(
-                        Button::new("save")
-                            .primary()
-                            .label("Kaydet")
-                            .on_click(cx.listener(|this, _, _, cx| this.save(cx))),
+                        div()
+                            .w(px(80.))
+                            .flex_none()
+                            .text_size(px(13.))
+                            .text_color(p.muted)
+                            .truncate()
+                            .child(t("settings.shortcut")),
+                    )
+                    .child(self.row(tool).hotkey.clone()),
+            )
+            .when_some(message, |d, m| d.child(div().ml(px(92.)).ts(12., 16.).text_color(p.danger).child(m)))
+            .when(wayland, |d| {
+                d.child(
+                    div()
+                        .ml(px(92.))
+                        .ts(12., 16.)
+                        .text_color(p.muted)
+                        .child(tf("settings.shortcut.wayland", &[("command", &format!("yaltri toggle {tool}"))])),
+                )
+            })
+    }
+
+    fn launcher_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let daemon = cx.global::<Daemon>();
+        let enabled = self.row(ToolId::Launcher).enabled;
+        let (dot, main, detail) = index_status(daemon, p);
+        let counts = daemon.game_counts();
+        let total: usize = Launcher::PLATFORM
+            .iter()
+            .filter(|l| l.enabled_in(&self.games))
+            .map(|l| counts.get(l).copied().unwrap_or(0))
+            .sum();
+
+        let toggle = ui::switch("launcher-enabled", enabled, p)
+            .on_click(cx.listener(move |this, _, _, cx| this.set_tool_enabled(ToolId::Launcher, !enabled, cx)))
+            .into_any_element();
+
+        let games = Launcher::PLATFORM.iter().copied().enumerate().map(|(ix, launcher)| {
+            let on = launcher.enabled_in(&self.games);
+            let count = counts.get(&launcher).copied().unwrap_or(0);
+            let (text, color) = if !on {
+                (t("settings.games.off").to_owned(), p.muted)
+            } else if count > 0 {
+                (tf("settings.games.count", &[("n", &count.to_string())]), p.foreground)
+            } else {
+                (t("settings.games.none").to_owned(), p.muted)
+            };
+            setting_row(40., ix == 0, launcher.display_name(), None, p)
+                .child(div().flex_none().text_size(px(12.)).text_color(color).child(text))
+                .child(ui::switch(("game", ix), on, p).on_click(cx.listener(move |this, _, _, cx| {
+                    launcher.set_in(&mut this.games, !on);
+                    cx.notify();
+                })))
+        });
+        let games_block = div()
+            .relative()
+            .flex()
+            .flex_col()
+            .when(!self.apps_enabled, |d| {
+                d.opacity(0.45)
+                    .child(div().pt(px(4.)).ts(12., 16.).text_color(p.muted).child(t("settings.games.needs_apps")))
+            })
+            .children(games)
+            .when(!self.apps_enabled, |d| d.child(blocker()));
+
+        let apps_on = self.apps_enabled;
+        let files_on = self.files_enabled;
+        let body = card(enabled, p)
+            .child(self.shortcut_row(ToolId::Launcher, p, cx))
+            .child(group_label(t("settings.group.sources"), None, p))
+            .child(setting_row(44., true, t("settings.sources.apps"), None, p).child(
+                ui::switch("apps-enabled", apps_on, p).on_click(cx.listener(move |this, _, _, cx| {
+                    this.apps_enabled = !apps_on;
+                    cx.notify();
+                })),
+            ))
+            .child(setting_row(44., false, t("settings.sources.files"), None, p).child(
+                ui::switch("files-enabled", files_on, p).on_click(cx.listener(move |this, _, _, cx| {
+                    this.files_enabled = !files_on;
+                    cx.notify();
+                })),
+            ))
+            .child(
+                div()
+                    .min_h(px(52.))
+                    .py(px(8.))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .border_t_1()
+                    .border_color(p.border)
+                    .child(div().size(px(8.)).flex_none().rounded(px(4.)).bg(dot))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(div().ts(13., 18.).text_color(p.foreground).truncate().child(main))
+                            .when(!detail.is_empty(), |d| {
+                                d.child(div().ts(12., 16.).text_color(p.muted).child(detail))
+                            }),
+                    )
+                    .child(
+                        ui::button("rescan", ButtonKind::Secondary, p)
+                            .child(ui::icon("refresh-cw", 14., p.foreground))
+                            .child(t("settings.rescan"))
+                            .on_click(cx.listener(|_, _, _, cx| cx.global::<Daemon>().rescan_files())),
                     ),
             )
+            .child(group_label(
+                t("settings.group.games"),
+                Some(tf("settings.games.count", &[("n", &total.to_string())])),
+                p,
+            ))
+            .child(games_block)
+            .when(!enabled, |d| d.child(blocker()));
+
+        vec![
+            section_header(tool_name(ToolId::Launcher), Some(t("settings.launcher.description")), Some(toggle), p)
+                .into_any_element(),
+            body.into_any_element(),
+        ]
+    }
+
+    fn picker_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let enabled = self.row(ToolId::Picker).enabled;
+        let toggle = ui::switch("picker-enabled", enabled, p)
+            .on_click(cx.listener(move |this, _, _, cx| this.set_tool_enabled(ToolId::Picker, !enabled, cx)))
+            .into_any_element();
+
+        let format_menu = self.format_menu.then(|| {
+            let items = Format::ALL.into_iter().enumerate().map(|(ix, f)| {
+                let selected = f == self.copy_format;
+                div()
+                    .id(("format-item", ix))
+                    .h(px(32.))
+                    .px(px(10.))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .rounded(px(4.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(p.list_hover))
+                    .child(
+                        div()
+                            .size(px(16.))
+                            .flex_none()
+                            .when(selected, |d| d.child(ui::icon("check", 16., p.accent_strong))),
+                    )
+                    .child(div().font_family(theme::mono_font()).text_size(px(13.)).child(f.label()))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.copy_format = f;
+                        this.format_menu = false;
+                        cx.notify();
+                    }))
+            });
+            deferred(
+                anchored().snap_to_window().child(
+                    ui::menu_box(p)
+                        .mt(px(36.))
+                        .min_w(px(140.))
+                        .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                            this.format_menu = false;
+                            cx.notify();
+                        }))
+                        .children(items),
+                ),
+            )
+            .with_priority(1)
+        });
+
+        let open_editor = self.picker_open_editor;
+        let format_button = div().relative().flex_none().child(
+            div()
+                .id("copy-format")
+                .w(px(140.))
+                .h(px(32.))
+                .px(px(10.))
+                .flex()
+                .items_center()
+                .justify_between()
+                .rounded(px(R_SM))
+                .border_1()
+                .border_color(p.border)
+                .bg(p.surface_raised)
+                .font_family(theme::mono_font())
+                .text_size(px(13.))
+                .cursor_pointer()
+                .hover(|s| s.border_color(p.border_strong))
+                .child(self.copy_format.label())
+                .child(ui::icon("chevron-down", 14., p.muted))
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.format_menu = !this.format_menu;
+                    cx.notify();
+                })),
+        );
+        let body = card(enabled, p)
+            .child(self.shortcut_row(ToolId::Picker, p, cx))
+            .child(group_label(t("settings.group.after_pick"), None, p))
+            .child(
+                setting_row(
+                    56.,
+                    true,
+                    t("settings.picker.copy_format"),
+                    Some(t("settings.picker.copy_format_hint")),
+                    p,
+                )
+                .child(format_button.children(format_menu)),
+            )
+            .child(setting_row(48., false, t("settings.picker.open_editor"), None, p).child(
+                ui::switch("picker-editor", open_editor, p).on_click(cx.listener(move |this, _, _, cx| {
+                    this.picker_open_editor = !open_editor;
+                    cx.notify();
+                })),
+            ))
+            .when(!enabled, |d| d.child(blocker()));
+
+        vec![
+            section_header(tool_name(ToolId::Picker), Some(t("settings.picker.description")), Some(toggle), p)
+                .into_any_element(),
+            body.into_any_element(),
+        ]
+    }
+
+    fn about_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let config_path = cx.global::<Daemon>().paths.settings_file();
+        let config_dir = config_path.parent().map(|d| d.to_path_buf());
+        let mut version = tf("settings.about.version", &[("version", update::VERSION)]);
+        let status = match &self.update {
+            UpdateState::Idle => None,
+            UpdateState::Checking => Some(t("settings.about.checking").to_owned()),
+            UpdateState::UpToDate => Some(t("settings.about.up_to_date").to_owned()),
+            UpdateState::Available(v) => Some(tf("settings.about.available", &[("version", v)])),
+            UpdateState::Failed => Some(t("settings.about.check_failed").to_owned()),
+        };
+        if let Some(status) = status {
+            version += " · ";
+            version += &status;
+        }
+
+        let link = |id: &'static str, label: &'static str, url: &'static str| {
+            div()
+                .id(id)
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .text_size(px(12.))
+                .text_color(p.foreground)
+                .cursor_pointer()
+                .child(div().border_b_1().border_color(p.border_strong).child(label))
+                .child(ui::icon("external-link", 12., p.muted))
+                .on_click(move |_, _, _| {
+                    let _ = open::that_detached(url);
+                })
+        };
+
+        let update_button = if matches!(self.update, UpdateState::Available(_)) {
+            ui::button("update", ButtonKind::Primary, p)
+                .child(ui::icon("download", 14., p.accent_fg))
+                .child(t("settings.about.download"))
+                .on_click(|_, _, _| {
+                    let _ = open::that_detached(update::RELEASES_URL);
+                })
+        } else {
+            ui::button("update", ButtonKind::Secondary, p)
+                .child(ui::icon("refresh-cw", 14., p.foreground))
+                .child(t("settings.about.check"))
+                .on_click(cx.listener(|this, _, _, cx| this.check_updates(cx)))
+        };
+
+        let body = div()
+            .p(px(16.))
+            .flex()
+            .flex_col()
+            .gap(px(14.))
+            .rounded(px(R_MD))
+            .bg(p.surface)
+            .border_1()
+            .border_color(p.border)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .child(img("brand/app-icon.svg").size(px(40.)).flex_none())
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(div().ts(15., 20.).font_weight(FontWeight::SEMIBOLD).child("Yaltri"))
+                            .child(div().ts(12., 16.).text_color(p.muted).truncate().child(version)),
+                    )
+                    .child(update_button),
+            )
+            .child(div().ts(13., 19.).text_color(p.muted).italic().child(t("settings.about.tagline")))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .pt(px(12.))
+                    .border_t_1()
+                    .border_color(p.border)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(div().ts(12., 16.).text_color(p.muted).child(t("settings.about.config_file")))
+                            .child(
+                                div()
+                                    .ts(12., 18.)
+                                    .font_family(theme::mono_font())
+                                    .text_color(p.foreground)
+                                    .truncate()
+                                    .child(config_path.display().to_string()),
+                            ),
+                    )
+                    .child(
+                        ui::button("open-folder", ButtonKind::Secondary, p)
+                            .child(ui::icon("folder-open", 14., p.foreground))
+                            .child(t("settings.about.open_folder"))
+                            .on_click(move |_, _, _| {
+                                if let Some(dir) = &config_dir {
+                                    let _ = open::that_detached(dir);
+                                }
+                            }),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap(px(16.))
+                    .child(link("source", t("settings.about.source"), update::REPO_URL))
+                    .child(link("licenses", t("settings.about.licenses"), update::LICENSES_URL)),
+            );
+
+        vec![section_header(t("settings.about.title"), None, None, p).into_any_element(), body.into_any_element()]
+    }
+}
+
+impl Render for SettingsView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = theme::of(window);
+
+        // Shortcut fields turn red while their shortcut has a problem.
+        let flags: Vec<(Entity<ShortcutInput>, bool)> =
+            self.rows.iter().map(|r| (r.hotkey.clone(), self.shortcut_message(r.tool, cx).is_some())).collect();
+        for (input, conflict) in flags {
+            if input.read(cx).is_conflict() != conflict {
+                input.update(cx, |h, cx| h.set_conflict(conflict, cx));
+            }
+        }
+
+        let warning = self.warning.clone().map(|w| {
+            div()
+                .mt(px(16.))
+                .p(px(12.))
+                .rounded(px(R_MD))
+                .bg(p.danger_bg)
+                .border_1()
+                .border_color(p.danger)
+                .ts(12., 16.)
+                .text_color(p.danger)
+                .child(w)
+        });
+
+        let mut sections: Vec<AnyElement> = Vec::new();
+        if is_implemented(ToolId::Launcher) {
+            sections.extend(self.launcher_section(p, cx));
+        }
+        if is_implemented(ToolId::Picker) {
+            sections.extend(self.picker_section(p, cx));
+        }
+        sections.extend(self.about_section(p, cx));
+
+        let scroll = div()
+            .id("settings-scroll")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .px(px(24.))
+            .pb(px(24.))
+            .flex()
+            .flex_col()
+            .children(warning)
+            .children(sections);
+
+        let toast = self.toast.clone().map(|(is_error, text)| {
+            div().absolute().left_0().right_0().bottom(px(56. + 12.)).flex().justify_center().child(if is_error {
+                div()
+                    .h(px(32.))
+                    .px(px(12.))
+                    .flex()
+                    .items_center()
+                    .rounded(px(R_MD))
+                    .bg(p.danger_bg)
+                    .border_1()
+                    .border_color(p.danger)
+                    .text_color(p.danger)
+                    .text_size(px(13.))
+                    .shadow(p.shadow_md.clone())
+                    .child(text)
+            } else {
+                ui::toast(text, None, p)
+            })
+        });
+
+        let footer = div()
+            .h(px(56.))
+            .flex_none()
+            .pl(px(24.))
+            .pr(px(16.))
+            .flex()
+            .items_center()
+            .justify_end()
+            .border_t_1()
+            .border_color(p.border)
+            .bg(p.background)
+            .child(
+                ui::button("save", ButtonKind::Primary, p)
+                    .px(px(16.))
+                    .child(t("settings.save"))
+                    .on_click(cx.listener(|this, _, _, cx| this.save(cx))),
+            );
+
+        let body = div()
+            .relative()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .border_t_1()
+            .border_color(p.border)
+            .child(scroll)
+            .child(footer)
+            .children(toast);
+
+        ui::window_frame(t("settings.title").into(), p, body)
     }
 }

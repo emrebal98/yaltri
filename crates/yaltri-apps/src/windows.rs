@@ -148,7 +148,7 @@ fn parse_start_apps(json: &str) -> Vec<App> {
             match listing.games.iter().find(|g| g.package_family.eq_ignore_ascii_case(family)) {
                 Some(g) => xbox_game(a, g, url),
                 None => App {
-                    location: "Microsoft Store uygulaması".into(),
+                    location: "Microsoft Store".into(),
                     action: ItemAction::OpenUrl(url),
                     name: a.name,
                     keywords: Vec::new(),

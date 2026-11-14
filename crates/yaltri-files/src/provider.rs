@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use yaltri_core::{ItemAction, SearchItem, SearchProvider};
+use yaltri_core::{ItemAction, ItemKind, SearchItem, SearchProvider};
 
 use crate::indexer::{FileIndexer, Shared};
 
@@ -41,8 +41,8 @@ impl SearchProvider for FilesProvider {
                 let parent = hit.path.parent().map(|p| p.display().to_string()).unwrap_or_default();
                 SearchItem {
                     title,
-                    subtitle: if hit.is_dir { format!("Klasör · {parent}") } else { parent },
-                    provider: "files",
+                    subtitle: parent,
+                    kind: if hit.is_dir { ItemKind::Folder } else { ItemKind::File },
                     score: hit.score,
                     action: ItemAction::Open(hit.path),
                     icon: None,

@@ -329,6 +329,10 @@ impl ColorHistory {
         self.colors.retain(|x| *x != c);
     }
 
+    pub fn clear(&mut self) {
+        self.colors.clear();
+    }
+
     pub fn colors(&self) -> &[Rgb] {
         &self.colors
     }

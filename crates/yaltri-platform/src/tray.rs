@@ -2,34 +2,25 @@
 //! `Command` they trigger, so one parser handles tray, IPC and CLI.
 //!
 //! - Windows: `tray-icon` (needs the main-thread message loop GPUI runs).
+//!   Left click opens search, right click the menu.
 //! - Linux: `ksni` (StatusNotifierItem over D-Bus, own thread, no GTK). GNOME
-//!   shows it through the AppIndicator extension Ubuntu ships by default.
+//!   shows it through the AppIndicator extension Ubuntu ships by default and
+//!   opens the menu on any click; menu icons are dropped there.
 
 use anyhow::Result;
 use yaltri_core::{Command, ToolId};
 
 use crate::CommandSender;
 
-/// One entry in the tray menu.
+/// One entry in the tray menu; the caller supplies localized labels.
 #[derive(Clone, Debug)]
 pub struct MenuEntry {
     pub label: String,
     pub command: Command,
-}
-
-/// Default menu for the given enabled tools.
-pub fn menu_for(enabled: &[ToolId]) -> Vec<Option<MenuEntry>> {
-    let mut items: Vec<Option<MenuEntry>> = enabled
-        .iter()
-        .map(|t| Some(MenuEntry { label: t.display_name().into(), command: Command::Toggle(*t) }))
-        .collect();
-    if !items.is_empty() {
-        items.push(None);
-    }
-    items.push(Some(MenuEntry { label: "Ayarlar".into(), command: Command::Settings }));
-    items.push(None);
-    items.push(Some(MenuEntry { label: "Çıkış".into(), command: Command::Quit }));
-    items
+    /// Lucide SVG source drawn in the menu's text color (Windows).
+    pub icon_svg: Option<&'static str>,
+    /// Current shortcut, shown right-aligned (Windows).
+    pub shortcut: Option<String>,
 }
 
 pub use imp::Tray;
@@ -38,11 +29,25 @@ pub use imp::Tray;
 mod imp {
     use super::*;
     use anyhow::Context;
-    use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+    use tray_icon::menu::{IconMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
     use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
     pub struct Tray {
         icon: TrayIcon,
+        light_taskbar: bool,
+    }
+
+    /// The small-icon size Windows uses for the tray at the current DPI.
+    fn tray_icon_size() -> u32 {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSMICON};
+        // SAFETY: plain metric query.
+        let size = unsafe { GetSystemMetrics(SM_CXSMICON) };
+        if size > 0 { size as u32 } else { 16 }
+    }
+
+    fn tray_icon(light_taskbar: bool) -> Result<Icon> {
+        let size = tray_icon_size();
+        Icon::from_rgba(crate::icon::tray_rgba(size, light_taskbar), size, size).context("building tray icon")
     }
 
     impl Tray {
@@ -54,42 +59,64 @@ mod imp {
                     let _ = menu_tx.unbounded_send(cmd);
                 }
             }));
-            // Left click opens the launcher, right click shows the menu.
             TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
-                if let TrayIconEvent::Click {
-                    button: MouseButton::Left,
-                    button_state: MouseButtonState::Up,
-                    ..
-                } = event
+                if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } =
+                    event
                 {
                     let _ = tx.unbounded_send(Command::Toggle(ToolId::Launcher));
                 }
             }));
 
-            let icon = Icon::from_rgba(crate::icon::rgba(), crate::icon::SIZE, crate::icon::SIZE)
-                .context("building tray icon")?;
+            let light_taskbar = crate::icon::taskbar_is_light();
             let icon = TrayIconBuilder::new()
                 .with_tooltip("Yaltri")
-                .with_icon(icon)
+                .with_icon(tray_icon(light_taskbar)?)
                 .with_menu(Box::new(build_menu(&menu)?))
                 .with_menu_on_left_click(false)
                 .build()
                 .context("creating tray icon")?;
-            Ok(Self { icon })
+            Ok(Self { icon, light_taskbar })
         }
 
         pub fn set_menu(&mut self, menu: Vec<Option<MenuEntry>>) -> Result<()> {
             self.icon.set_menu(Some(Box::new(build_menu(&menu)?)));
             Ok(())
         }
+
+        /// Re-reads the taskbar theme and swaps the icon if it changed.
+        pub fn refresh_theme(&mut self) -> Result<()> {
+            let light = crate::icon::taskbar_is_light();
+            if light != self.light_taskbar {
+                self.icon.set_icon(Some(tray_icon(light)?))?;
+                self.light_taskbar = light;
+            }
+            Ok(())
+        }
     }
 
     fn build_menu(entries: &[Option<MenuEntry>]) -> Result<Menu> {
+        // Native menus follow the apps theme.
+        let ink = if crate::icon::apps_use_light_theme() { "#17181B" } else { "#ECEDEF" };
         let menu = Menu::new();
         for entry in entries {
-            match entry {
-                Some(e) => menu.append(&MenuItem::with_id(e.command.to_string(), &e.label, true, None))?,
-                None => menu.append(&PredefinedMenuItem::separator())?,
+            let Some(e) = entry else {
+                menu.append(&PredefinedMenuItem::separator())?;
+                continue;
+            };
+            // A tab right-aligns the shortcut in Win32 menus.
+            let text = match &e.shortcut {
+                Some(s) if !s.is_empty() => format!("{}\t{s}", e.label),
+                _ => e.label.clone(),
+            };
+            let icon = e
+                .icon_svg
+                .and_then(|svg| crate::icon::svg_rgba(svg, 16, Some(ink)))
+                .and_then(|rgba| tray_icon::menu::Icon::from_rgba(rgba, 16, 16).ok());
+            match icon {
+                Some(icon) => {
+                    menu.append(&IconMenuItem::with_id(e.command.to_string(), text, true, Some(icon), None))?
+                }
+                None => menu.append(&MenuItem::with_id(e.command.to_string(), text, true, None))?,
             }
         }
         Ok(menu)
@@ -119,11 +146,15 @@ mod imp {
             "Yaltri".into()
         }
         fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-            vec![ksni::Icon {
-                width: crate::icon::SIZE as i32,
-                height: crate::icon::SIZE as i32,
-                data: crate::icon::argb(),
-            }]
+            // Panels are assumed dark: the white mark.
+            [16u32, 24, 32]
+                .into_iter()
+                .map(|size| ksni::Icon {
+                    width: size as i32,
+                    height: size as i32,
+                    data: crate::icon::argb(crate::icon::tray_rgba(size, false)),
+                })
+                .collect()
         }
         fn activate(&mut self, _x: i32, _y: i32) {
             let _ = self.tx.unbounded_send(Command::Toggle(ToolId::Launcher));
@@ -152,14 +183,17 @@ mod imp {
 
     impl Tray {
         pub fn spawn(tx: CommandSender, menu: Vec<Option<MenuEntry>>) -> Result<Self> {
-            let handle = SniTray { tx, menu }
-                .spawn()
-                .context("starting tray (GNOME needs the AppIndicator extension)")?;
+            let handle =
+                SniTray { tx, menu }.spawn().context("starting tray (GNOME needs the AppIndicator extension)")?;
             Ok(Self { handle })
         }
 
         pub fn set_menu(&mut self, menu: Vec<Option<MenuEntry>>) -> Result<()> {
             self.handle.update(|t| t.menu = menu);
+            Ok(())
+        }
+
+        pub fn refresh_theme(&mut self) -> Result<()> {
             Ok(())
         }
     }

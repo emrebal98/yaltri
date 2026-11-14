@@ -20,7 +20,7 @@ use yaltri_core::settings::GamesSettings;
 
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
-use yaltri_core::{ItemAction, Scope, SearchItem, SearchProvider};
+use yaltri_core::{ItemAction, ItemKind, Scope, SearchItem, SearchProvider};
 
 /// Apps rank above files but below calculator results.
 const SCORE_BASE: u32 = 500;
@@ -161,7 +161,7 @@ impl SearchProvider for AppsProvider {
     }
 
     fn query_scoped(&self, query: &str, scope: Scope) -> Vec<SearchItem> {
-        let in_scope = |app: &App| scope.admits(item_provider(app));
+        let in_scope = |app: &App| scope.admits(item_kind(app));
         let query = query.trim();
         if query.is_empty() {
             if scope == Scope::All {
@@ -223,15 +223,15 @@ impl SearchProvider for AppsProvider {
 }
 
 /// Games are tagged apart from apps so the launcher can filter them.
-fn item_provider(app: &App) -> &'static str {
-    if app.launcher.is_some() { "games" } else { "apps" }
+fn item_kind(app: &App) -> ItemKind {
+    if app.launcher.is_some() { ItemKind::Game } else { ItemKind::App }
 }
 
 fn item(app: &App, score: u32) -> SearchItem {
     SearchItem {
         title: app.name.clone(),
         subtitle: app.location.clone(),
-        provider: item_provider(app),
+        kind: item_kind(app),
         score,
         action: app.action.clone(),
         icon: app.icon.clone(),
@@ -273,12 +273,12 @@ mod tests {
         let mut pal = app("Palworld", &[]);
         pal.launcher = Some(Launcher::Xbox);
         let p = provider(vec![app("Paint", &[]), pal]);
-        let scoped = |q, scope| p.query_scoped(q, scope).into_iter().map(|i| (i.title, i.provider)).collect::<Vec<_>>();
-        assert_eq!(scoped("pa", Scope::Games), [("Palworld".to_owned(), "games")]);
-        assert_eq!(scoped("pa", Scope::Apps), [("Paint".to_owned(), "apps")]);
+        let scoped = |q, scope| p.query_scoped(q, scope).into_iter().map(|i| (i.title, i.kind)).collect::<Vec<_>>();
+        assert_eq!(scoped("pa", Scope::Games), [("Palworld".to_owned(), ItemKind::Game)]);
+        assert_eq!(scoped("pa", Scope::Apps), [("Paint".to_owned(), ItemKind::App)]);
         assert_eq!(scoped("pa", Scope::All).len(), 2);
         // An empty query lists the whole scope, but nothing when unscoped.
-        assert_eq!(scoped("", Scope::Games), [("Palworld".to_owned(), "games")]);
+        assert_eq!(scoped("", Scope::Games), [("Palworld".to_owned(), ItemKind::Game)]);
         assert!(scoped("", Scope::All).is_empty());
     }
 
