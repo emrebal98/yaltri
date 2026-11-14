@@ -6,6 +6,9 @@
 //!   `Explorer\StartupApproved\Run` instead of removing the value; it is read
 //!   too, and cleared when we turn autostart on.
 //! - Linux: `~/.config/autostart/yaltri.desktop` (XDG autostart).
+//!
+//! Linux also gets an application entry plus icon (`install_app_entry`), so
+//! the dock, app grid and System Monitor show Yaltri's icon.
 
 use anyhow::{Context as _, Result};
 
@@ -18,6 +21,15 @@ pub fn is_enabled() -> bool {
 pub fn set_enabled(on: bool) -> Result<()> {
     let exe = std::env::current_exe().context("locating the yaltri executable")?;
     imp::set_enabled(on, &exe)
+}
+
+/// Linux: writes `~/.local/share/applications/yaltri.desktop` and the app
+/// icon into the user's icon theme (only what changed), and refreshes an
+/// existing startup entry. Desktops find a program's icon through these.
+#[cfg(not(windows))]
+pub fn install_app_entry(icon_svg: &str) -> Result<()> {
+    let exe = std::env::current_exe().context("locating the yaltri executable")?;
+    imp::install_app_entry(&exe, icon_svg)
 }
 
 #[cfg(windows)]
@@ -136,7 +148,44 @@ mod imp {
         })
     }
 
+    fn data_home() -> Option<PathBuf> {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+    }
+
+    /// Writes `content` to `path` unless it already holds exactly that.
+    fn write_if_changed(path: &Path, content: &[u8]) -> Result<()> {
+        if std::fs::read(path).is_ok_and(|old| old == content) {
+            return Ok(());
+        }
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        }
+        std::fs::write(path, content).with_context(|| format!("writing {}", path.display()))
+    }
+
+    pub fn install_app_entry(exe: &Path, icon_svg: &str) -> Result<()> {
+        let data = data_home().context("no home directory")?;
+        write_if_changed(&data.join("icons/hicolor/scalable/apps/yaltri.svg"), icon_svg.as_bytes())?;
+        write_if_changed(&data.join("applications/yaltri.desktop"), app_entry(exe).as_bytes())?;
+        if is_enabled() {
+            set_enabled(true, exe)?;
+        }
+        Ok(())
+    }
+
+    /// The application entry: what launchers, docks and System Monitor read.
+    pub fn app_entry(exe: &Path) -> String {
+        format!("{}Categories=Utility;\n", entry_head(exe))
+    }
+
     pub fn desktop_entry(exe: &Path) -> String {
+        format!("{}X-GNOME-Autostart-enabled=true\n", entry_head(exe))
+    }
+
+    fn entry_head(exe: &Path) -> String {
         // Desktop Entry spec: quote the program, escaping `"`, `` ` ``, `$`, `\`.
         let mut quoted = String::from("\"");
         for c in exe.display().to_string().chars() {
@@ -146,8 +195,9 @@ mod imp {
             quoted.push(c);
         }
         quoted.push('"');
+        // StartupWMClass ties our windows (WM_CLASS "yaltri") to this entry.
         format!(
-            "[Desktop Entry]\nType=Application\nName=Yaltri\nComment=Search and color picker in the tray\nExec={quoted}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
+            "[Desktop Entry]\nType=Application\nName=Yaltri\nComment=Search and color picker in the tray\nExec={quoted}\nIcon=yaltri\nStartupWMClass=yaltri\nTerminal=false\n"
         )
     }
 
@@ -178,6 +228,15 @@ mod imp {
             let entry = desktop_entry(Path::new("/home/a b/.local/bin/yaltri"));
             assert!(entry.contains("Exec=\"/home/a b/.local/bin/yaltri\"\n"));
             assert!(entry.contains("X-GNOME-Autostart-enabled=true"));
+        }
+
+        #[test]
+        fn app_entry_names_the_icon_and_window_class() {
+            let entry = app_entry(Path::new("/usr/bin/yaltri"));
+            assert!(entry.starts_with("[Desktop Entry]\n"));
+            assert!(entry.contains("Icon=yaltri\n"));
+            assert!(entry.contains("StartupWMClass=yaltri\n"));
+            assert!(!entry.contains("Autostart"));
         }
     }
 }
