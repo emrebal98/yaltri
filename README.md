@@ -8,7 +8,7 @@ Windows, Ubuntu ve Arch üzerinde aynı görünüm için [GPUI](https://gpui.rs)
 | Launcher: hesap makinesi + birim çevirme | ✅ |
 | Launcher: uygulama arama (Start Menu + Store / `.desktop`) | ✅ |
 | Launcher: dosya/klasör arama (kendi index'imiz, Everything gerekmez) | ✅ |
-| Launcher: oyunlar (Steam, Xbox/Game Pass, Epic, GOG, Ubisoft, EA · Linux: Steam, Heroic, Lutris) | ✅ |
+| Launcher: oyunlar (Steam, Xbox/Game Pass, Epic, Riot, GOG, Ubisoft, EA · Linux: Steam, Heroic, Lutris) | ✅ |
 | Renk seçici (büyüteç, 8 format, geçmiş, tonlar) | ✅ |
 
 ## Kullanım

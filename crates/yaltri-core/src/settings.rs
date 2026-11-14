@@ -49,13 +49,14 @@ pub struct GamesSettings {
     pub ea: bool,
     /// Xbox app / PC Game Pass (Microsoft Store games).
     pub xbox: bool,
+    pub riot: bool,
     pub heroic: bool,
     pub lutris: bool,
 }
 
 impl Default for GamesSettings {
     fn default() -> Self {
-        Self { steam: true, epic: true, gog: true, ubisoft: true, ea: true, xbox: true, heroic: true, lutris: true }
+        Self { steam: true, epic: true, gog: true, ubisoft: true, ea: true, xbox: true, riot: true, heroic: true, lutris: true }
     }
 }
 
