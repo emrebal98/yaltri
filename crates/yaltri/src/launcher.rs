@@ -308,6 +308,7 @@ impl Render for Launcher {
             div()
                 .id(ix)
                 .h(px(ROW_HEIGHT))
+                .flex_shrink_0()
                 .px_3()
                 .flex()
                 .items_center()
@@ -349,6 +350,10 @@ impl Render for Launcher {
         });
         let chips_row = div()
             .h(px(CHIPS_HEIGHT))
+            // Fixed rows: while the window catches up with a new height,
+            // the results may not fit for a frame; they must not squeeze
+            // the header and make it jump.
+            .flex_shrink_0()
             .flex()
             .items_center()
             .gap_1()
@@ -370,6 +375,7 @@ impl Render for Launcher {
             .child(
                 div()
                     .h(px(INPUT_HEIGHT))
+                    .flex_shrink_0()
                     .flex()
                     .items_center()
                     .child(Input::new(&self.input).appearance(false).large()),
