@@ -25,5 +25,6 @@ global-hotkey.workspace = true
 image.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+ttf-parser = "0.25"
 x11rb.workspace = true
 ksni.workspace = true

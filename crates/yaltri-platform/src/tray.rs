@@ -164,6 +164,8 @@ mod imp {
     struct SniTray {
         tx: CommandSender,
         menu: Vec<Option<MenuEntry>>,
+        /// GNOME: the shell's UI font, to line the shortcuts up.
+        font: Option<Vec<u8>>,
     }
 
     impl ksni::Tray for SniTray {
@@ -192,7 +194,15 @@ mod imp {
             let gnome = is_gnome();
             // Shell menus follow the panel, which we assume dark.
             let ink = if crate::icon::taskbar_is_light() { "#17181B" } else { "#ECEDEF" };
-            let column = self.menu.iter().flatten().filter(|e| e.shortcut.is_some()).map(|e| e.label.chars().count()).max().unwrap_or(0);
+            let face = self.font.as_deref().and_then(|data| ttf_parser::Face::parse(data, 0).ok());
+            let with_shortcut: Vec<&str> = self
+                .menu
+                .iter()
+                .flatten()
+                .filter(|e| e.shortcut.as_deref().is_some_and(|s| !s.is_empty()))
+                .map(|e| e.label.as_str())
+                .collect();
+            let pads = shortcut_pads(&with_shortcut, |text| face.as_ref().and_then(|f| text_width(f, text)));
             self.menu
                 .iter()
                 .map(|entry| match entry {
@@ -201,7 +211,13 @@ mod imp {
                         let cmd = e.command;
                         let shortcut = e.shortcut.as_deref().filter(|s| !s.is_empty());
                         StandardItem {
-                            label: if gnome { label_with_shortcut(&e.label, shortcut, column) } else { e.label.clone() },
+                            label: match (gnome, shortcut) {
+                                (true, Some(s)) => {
+                                    let pad = with_shortcut.iter().position(|l| *l == e.label).map_or(MIN_GAP, |i| pads[i]);
+                                    format!("{}{}{s}", e.label, " ".repeat(pad))
+                                }
+                                _ => e.label.clone(),
+                            },
                             icon_data: e
                                 .icon_svg
                                 .and_then(|svg| crate::icon::svg_png(svg, 16, Some(ink)))
@@ -236,24 +252,52 @@ mod imp {
         std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.split(':').any(|d| d.eq_ignore_ascii_case("gnome")))
     }
 
-    /// Label with the shortcut after it, for menus that ignore `shortcut`.
-    /// The shell font is proportional and a tab is one space wide there, so
-    /// the shortcuts line up only roughly: a space is about half a letter,
-    /// so pad two spaces per letter short of the longest label (`column`).
-    pub(super) fn label_with_shortcut(label: &str, shortcut: Option<&str>, column: usize) -> String {
-        match shortcut {
-            Some(s) => {
-                let pad = 4 + 2 * column.saturating_sub(label.chars().count());
-                format!("{label}{}{s}", " ".repeat(pad))
+    /// Spaces between the longest label and its shortcut.
+    pub(super) const MIN_GAP: usize = 4;
+
+    /// Spaces after each label so the shortcuts that follow start in one
+    /// column. GNOME menus draw no shortcut column and a tab is one space
+    /// wide there, so we pad with spaces: measured in the shell font when
+    /// `width` can (off by at most half a space), else guessed as two
+    /// spaces per letter.
+    pub(super) fn shortcut_pads(labels: &[&str], width: impl Fn(&str) -> Option<f32>) -> Vec<usize> {
+        let measured: Option<Vec<f32>> = labels.iter().map(|l| width(l)).collect();
+        match (measured, width(" ")) {
+            (Some(widths), Some(space)) if space > 0. => {
+                let target = widths.iter().copied().fold(0., f32::max);
+                widths.iter().map(|w| MIN_GAP + ((target - w) / space).round() as usize).collect()
             }
-            None => label.to_owned(),
+            _ => {
+                let longest = labels.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+                labels.iter().map(|l| MIN_GAP + 2 * (longest - l.chars().count())).collect()
+            }
         }
+    }
+
+    /// Advance width of `text` in font units; `None` if a glyph is missing.
+    fn text_width(face: &ttf_parser::Face, text: &str) -> Option<f32> {
+        text.chars().map(|c| face.glyph_index(c).and_then(|g| face.glyph_hor_advance(g)).map(f32::from)).sum()
+    }
+
+    /// The font file behind GNOME's interface font (`'Ubuntu 11'`).
+    fn shell_font() -> Option<Vec<u8>> {
+        let run = |cmd: &str, args: &[&str]| {
+            let out = std::process::Command::new(cmd).args(args).output().ok()?;
+            out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+        };
+        let name = run("gsettings", &["get", "org.gnome.desktop.interface", "font-name"])?;
+        let name = name.trim_matches('\'');
+        // Drop the trailing size.
+        let family = name.rsplit_once(' ').filter(|(_, size)| size.parse::<f32>().is_ok()).map_or(name, |(f, _)| f);
+        let file = run("fc-match", &["-f", "%{file}", family])?;
+        std::fs::read(file).ok()
     }
 
     impl Tray {
         pub fn spawn(tx: CommandSender, menu: Vec<Option<MenuEntry>>) -> Result<Self> {
+            let font = if is_gnome() { shell_font() } else { None };
             let handle =
-                SniTray { tx, menu }.spawn().context("starting tray (GNOME needs the AppIndicator extension)")?;
+                SniTray { tx, menu, font }.spawn().context("starting tray (GNOME needs the AppIndicator extension)")?;
             Ok(Self { handle })
         }
 
@@ -270,16 +314,18 @@ mod imp {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use super::imp::label_with_shortcut;
+    use super::imp::{MIN_GAP, shortcut_pads};
 
     #[test]
-    fn appends_the_shortcut_only_when_set() {
-        assert_eq!(label_with_shortcut("Search", Some("Ctrl+Alt+Space"), 6), "Search    Ctrl+Alt+Space");
-        assert_eq!(label_with_shortcut("Settings", None, 12), "Settings");
+    fn measured_labels_pad_to_the_widest() {
+        // Space 2 units wide; labels 10 and 16 units.
+        let width = |t: &str| Some(match t { " " => 2., "Search" => 10., "Color picker" => 16., _ => 0. });
+        assert_eq!(shortcut_pads(&["Search", "Color picker"], width), [MIN_GAP + 3, MIN_GAP]);
     }
 
     #[test]
-    fn pads_shorter_labels_toward_the_longest() {
-        assert_eq!(label_with_shortcut("Ab", Some("X"), 4), format!("Ab{}X", " ".repeat(8)));
+    fn unmeasurable_labels_fall_back_to_letter_count() {
+        assert_eq!(shortcut_pads(&["Ab", "Abcd"], |_| None), [MIN_GAP + 4, MIN_GAP]);
     }
 }
+
