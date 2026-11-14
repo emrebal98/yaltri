@@ -75,7 +75,13 @@ Change shortcuts in the **Settings** window (right-click the tray icon → Setti
 | `↑` `↓` | Move through results |
 | `Enter` | Open |
 | `Ctrl+Enter` | Open the containing folder |
+| `Tab` / `Shift+Tab` | Switch filter: All, Apps, Files, Games |
+| `Backspace` in an empty box | Clear the filter |
 | `Esc` | Close |
+
+To filter while typing, start with a shorthand and a space: `/a ` apps, `/f ` files, `/g ` games
+(`/u`, `/d`, `/o` work too). With a filter on and nothing typed, Yaltri lists everything in it,
+for example all your games.
 
 - **Apps:** Start menu and store apps on Windows, installed desktop apps on Linux.
 - **Files:** Yaltri keeps its own index of file names and finds them instantly, even across millions of files.

@@ -75,7 +75,12 @@ Kısayolları **Ayarlar** penceresinden değiştirebilirsin (tepsi ikonuna sağ 
 | `↑` `↓` | Sonuçlar arasında gez |
 | `Enter` | Aç |
 | `Ctrl+Enter` | Dosyanın bulunduğu klasörü aç |
+| `Tab` / `Shift+Tab` | Filtre değiştir: Tümü, Uygulamalar, Dosyalar, Oyunlar |
+| `Backspace` (kutu boşken) | Filtreyi kaldır |
 | `Esc` | Kapat |
+
+Yazarken filtrelemek için başa kısaltma ve boşluk yaz: `/u ` uygulama, `/d ` dosya, `/o ` oyun
+(`/a`, `/f`, `/g` de çalışır). Filtre açıkken kutu boşsa o türdeki her şey listelenir, örneğin bütün oyunların.
 
 - **Uygulamalar:** Başlat menüsündeki ve mağazadan kurulan uygulamalar, Linux'ta kurulu masaüstü uygulamaları.
 - **Dosyalar:** Yaltri bilgisayarındaki dosya adlarını kendi index'inde tutar, milyonlarca dosyada bile anında bulur.

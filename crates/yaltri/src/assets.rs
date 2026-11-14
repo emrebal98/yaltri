@@ -5,7 +5,7 @@ use std::borrow::Cow;
 
 use gpui_kit::{AssetSource, Result, SharedString};
 
-gpui_kit::assets::icon_assets!(ExtraIcons, [AppWindow, Calculator, Pencil, Pipette]);
+gpui_kit::assets::icon_assets!(ExtraIcons, [AppWindow, Calculator, Gamepad2, Pencil, Pipette]);
 
 pub struct YaltriAssets;
 

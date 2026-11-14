@@ -13,7 +13,7 @@ use gpui_kit::{
     point, px, size,
 };
 use yaltri_core::search::search_all;
-use yaltri_core::{ItemAction, SearchItem};
+use yaltri_core::{ItemAction, Scope, SearchItem};
 use yaltri_platform::launch;
 use yaltri_platform::session::Session;
 
@@ -21,6 +21,7 @@ use crate::daemon::Daemon;
 
 const WIDTH: f32 = 640.;
 const INPUT_HEIGHT: f32 = 52.;
+const CHIPS_HEIGHT: f32 = 28.;
 const ROW_HEIGHT: f32 = 52.;
 const PADDING: f32 = 8.;
 
@@ -68,7 +69,7 @@ fn close(window: &mut Window, cx: &mut App) {
 }
 
 fn window_height(rows: usize) -> f32 {
-    INPUT_HEIGHT + PADDING * 2. + rows as f32 * ROW_HEIGHT + if rows > 0 { PADDING } else { 0. }
+    INPUT_HEIGHT + CHIPS_HEIGHT + PADDING * 3. + rows as f32 * ROW_HEIGHT + if rows > 0 { PADDING } else { 0. }
 }
 
 fn window_options(session: Session, rows: usize, cx: &App) -> WindowOptions {
@@ -113,8 +114,20 @@ fn window_options(session: Session, rows: usize, cx: &App) -> WindowOptions {
     }
 }
 
+/// Chip label, and the input placeholder while that scope is active.
+fn scope_text(scope: Scope) -> (&'static str, &'static str) {
+    match scope {
+        Scope::All => ("Tümü", "Uygulama, dosya, oyun ara veya hesapla…"),
+        Scope::Apps => ("Uygulamalar", "Uygulama ara…"),
+        Scope::Files => ("Dosyalar", "Dosya veya klasör ara…"),
+        Scope::Games => ("Oyunlar", "Oyun ara…"),
+    }
+}
+
 pub struct Launcher {
     input: Entity<InputState>,
+    /// Which kind of results to show; Tab cycles it, `/o ` style prefixes set it.
+    scope: Scope,
     items: Vec<SearchItem>,
     selected: usize,
     search: Option<Task<()>>,
@@ -126,12 +139,21 @@ pub struct Launcher {
 
 impl Launcher {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Uygulama, dosya ara veya hesapla…"));
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder(scope_text(Scope::All).1));
 
         let on_change = cx.subscribe_in(&input, window, |this, _, event, window, cx| {
-            if matches!(event, InputEvent::Change) {
-                this.run_search(window, cx);
+            if !matches!(event, InputEvent::Change) {
+                return;
             }
+            // "/o palw" turns into the Games scope with "palw" in the box.
+            let value = this.input.read(cx).value().to_string();
+            if let Some((scope, rest)) = Scope::from_prefix(&value) {
+                let rest = rest.to_owned();
+                this.input.update(cx, |input, cx| input.set_value(rest, window, cx));
+                this.set_scope(scope, window, cx);
+                return;
+            }
+            this.run_search(window, cx);
         });
 
         let on_activation = cx.observe_window_activation(window, |this, window, cx| {
@@ -160,6 +182,7 @@ impl Launcher {
 
         Self {
             input,
+            scope: Scope::All,
             items: Vec::new(),
             selected: 0,
             search: None,
@@ -173,12 +196,24 @@ impl Launcher {
         match ks.key.as_str() {
             "escape" => close(window, cx),
             "up" => self.move_selection(-1, cx),
-            "down" | "tab" => self.move_selection(1, cx),
+            "down" => self.move_selection(1, cx),
+            "tab" => self.set_scope(self.scope.cycle(!ks.modifiers.shift), window, cx),
+            // Backspace in an empty box drops the scope, like deleting a chip.
+            "backspace" if self.scope != Scope::All && self.input.read(cx).value().is_empty() => {
+                self.set_scope(Scope::All, window, cx)
+            }
             // Ctrl+Enter: show the item in its folder instead of opening it.
             "enter" => self.accept(self.selected, ks.modifiers.control, window, cx),
             _ => return false,
         }
         true
+    }
+
+    fn set_scope(&mut self, scope: Scope, window: &mut Window, cx: &mut Context<Self>) {
+        self.scope = scope;
+        self.input.update(cx, |input, cx| input.set_placeholder(scope_text(scope).1, window, cx));
+        self.run_search(window, cx);
+        cx.notify();
     }
 
     fn move_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
@@ -196,6 +231,7 @@ impl Launcher {
         let providers = daemon.providers.clone();
         let history = daemon.history.clone();
         let limit = daemon.settings.launcher.max_results;
+        let scope = self.scope;
         let background = cx.background_executor().clone();
         // Replacing the task drops (cancels) the previous, now stale search.
         self.search = Some(cx.spawn_in(window, async move |this, cx| {
@@ -204,7 +240,7 @@ impl Launcher {
                     let boost = |item: &SearchItem| {
                         item.action.history_key().map_or(0, |k| history.lock().map_or(0, |h| h.boost(&k)))
                     };
-                    search_all(&providers, &query, limit, &boost)
+                    search_all(&providers, &query, scope, limit, &boost)
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| this.set_items(items, window, cx));
@@ -257,6 +293,7 @@ fn item_icon(item: &SearchItem, tint: Hsla) -> impl IntoElement {
     let symbol = match (&item.action, item.provider) {
         (_, "calc") => IconName::Calculator,
         (_, "apps") => IconName::AppWindow,
+        (_, "games") => IconName::Gamepad2,
         (ItemAction::Open(_), _) if item.subtitle.starts_with("Klasör") => IconName::Folder,
         _ => IconName::File,
     };
@@ -293,6 +330,32 @@ impl Render for Launcher {
                 .on_click(cx.listener(move |this, _, window, cx| this.accept(ix, false, window, cx)))
         });
 
+        let scope = self.scope;
+        let chips = Scope::ALL.into_iter().map(|chip| {
+            let active = chip == scope;
+            div()
+                .id(scope_text(chip).0)
+                .h(px(CHIPS_HEIGHT))
+                .px_3()
+                .flex()
+                .items_center()
+                .rounded_full()
+                .text_sm()
+                .cursor_pointer()
+                .when(active, |c| c.bg(theme.primary).text_color(theme.primary_foreground))
+                .when(!active, |c| c.text_color(theme.muted_foreground).hover(|c| c.bg(theme.list_hover)))
+                .child(scope_text(chip).0)
+                .on_click(cx.listener(move |this, _, window, cx| this.set_scope(chip, window, cx)))
+        });
+        let chips_row = div()
+            .h(px(CHIPS_HEIGHT))
+            .flex()
+            .items_center()
+            .gap_1()
+            .children(chips)
+            .child(div().flex_1())
+            .child(div().text_xs().text_color(theme.muted_foreground).child("Tab ile geç"));
+
         div()
             .size_full()
             .p(px(PADDING))
@@ -311,6 +374,7 @@ impl Render for Launcher {
                     .items_center()
                     .child(Input::new(&self.input).appearance(false).large()),
             )
+            .child(chips_row)
             .children(rows)
     }
 }
