@@ -8,7 +8,7 @@ Windows, Ubuntu ve Arch üzerinde aynı görünüm için [GPUI](https://gpui.rs)
 | Launcher: hesap makinesi + birim çevirme | ✅ |
 | Launcher: uygulama arama (Start Menu + Store / `.desktop`) | ✅ |
 | Launcher: dosya/klasör arama (kendi index'imiz, Everything gerekmez) | ✅ |
-| Launcher: oyunlar (Steam, Epic, GOG, Ubisoft, EA · Linux: Steam, Heroic, Lutris) | ✅ |
+| Launcher: oyunlar (Steam, Xbox/Game Pass, Epic, GOG, Ubisoft, EA · Linux: Steam, Heroic, Lutris) | ✅ |
 | Renk seçici (büyüteç, 8 format, geçmiş, tonlar) | ✅ |
 
 ## Kullanım
@@ -28,7 +28,7 @@ Launcher: `↑/↓` seç, `Enter` aç (hesap sonucunu kopyalar), `Ctrl+Enter` kl
 `yaltri toggle picker` (varsayılan kısayol `Win+Shift+C`; PowerToys açıksa çakışır, ayarlardan değiştirin).
 İmleç yanında renk ve kodu görünür; tekerleği yukarı çevirince imlecin olduğu yerde büyüteç açılır ve
 her adımda büyür, aşağı çevirince küçülüp kapanır. Sol tık seçer ve panoya kopyalar, sağ tık / `Esc` iptal eder. Seçimden sonra editör açılır: geçmiş (sağ tık siler), açık/koyu tonlar,
-HEX · RGB · HSL · HSV · CMYK · HWB · Decimal · Float. ★ ile seçimde kopyalanacak format belirlenir.
+HEX · RGB · HSL · HSV · OKLCH · CMYK · HWB · Decimal · Float. ★ ile seçimde kopyalanacak format belirlenir.
 
 - Windows / X11: masaüstü görüntüsü alınır, her ekranda dondurulmuş haliyle gösterilir.
 - Wayland (GNOME, KDE, Hyprland): ekran okunamadığı için masaüstünün kendi seçicisi
@@ -38,7 +38,7 @@ HEX · RGB · HSL · HSV · CMYK · HWB · Decimal · Float. ★ ile seçimde ko
 
 Kurulu oyunlar launcher'ların kendi kayıtlarından okunur ve launcher üzerinden başlatılır
 (giriş, overlay ve DRM çalışsın diye): Steam `steam://rungameid`, Epic `com.epicgames.launcher://`,
-Ubisoft `uplay://`, EA `origin2://`, GOG doğrudan exe; Linux'ta Heroic `heroic://` ve Lutris `lutris:`.
+Ubisoft `uplay://`, EA `origin2://`, GOG doğrudan exe, Xbox/Game Pass `shell:AppsFolder`; Linux'ta Heroic `heroic://` ve Lutris `lutris:`.
 Ayarlar → Oyunlar'dan launcher bazında açılıp kapatılır; her launcher'ın yanında bulunan oyun sayısı görünür.
 
 ### Dosya index'i

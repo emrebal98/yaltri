@@ -35,7 +35,7 @@ pub fn show(color: Rgb, cx: &mut App) {
     }
 
     let options = WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(620.), px(480.)), cx))),
+        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(620.), px(520.)), cx))),
         titlebar: Some(TitlebarOptions { title: Some("Yaltri Renk Seçici".into()), ..Default::default() }),
         app_id: Some("yaltri".into()),
         ..Default::default()

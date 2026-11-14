@@ -23,6 +23,7 @@ pub enum Launcher {
     Gog,
     Ubisoft,
     Ea,
+    Xbox,
     Heroic,
     Lutris,
 }
@@ -30,7 +31,7 @@ pub enum Launcher {
 impl Launcher {
     /// Launchers that exist on this platform, in settings order.
     pub const PLATFORM: &'static [Launcher] = if cfg!(windows) {
-        &[Launcher::Steam, Launcher::Epic, Launcher::Gog, Launcher::Ubisoft, Launcher::Ea]
+        &[Launcher::Steam, Launcher::Xbox, Launcher::Epic, Launcher::Gog, Launcher::Ubisoft, Launcher::Ea]
     } else {
         &[Launcher::Steam, Launcher::Heroic, Launcher::Lutris]
     };
@@ -42,6 +43,7 @@ impl Launcher {
             Launcher::Gog => "GOG",
             Launcher::Ubisoft => "Ubisoft Connect",
             Launcher::Ea => "EA app",
+            Launcher::Xbox => "Xbox",
             Launcher::Heroic => "Heroic",
             Launcher::Lutris => "Lutris",
         }
@@ -54,6 +56,7 @@ impl Launcher {
             Launcher::Gog => s.gog,
             Launcher::Ubisoft => s.ubisoft,
             Launcher::Ea => s.ea,
+            Launcher::Xbox => s.xbox,
             Launcher::Heroic => s.heroic,
             Launcher::Lutris => s.lutris,
         }
@@ -66,6 +69,7 @@ impl Launcher {
             Launcher::Gog => &mut s.gog,
             Launcher::Ubisoft => &mut s.ubisoft,
             Launcher::Ea => &mut s.ea,
+            Launcher::Xbox => &mut s.xbox,
             Launcher::Heroic => &mut s.heroic,
             Launcher::Lutris => &mut s.lutris,
         };
@@ -113,6 +117,7 @@ fn discover_one(launcher: Launcher) -> Vec<App> {
         Launcher::Ea => windows_stores::ea(),
         Launcher::Heroic => linux_stores::heroic_roots().iter().flat_map(|r| linux_stores::heroic(r)).collect(),
         Launcher::Lutris if !cfg!(windows) => linux_stores::lutris(),
+        // Xbox games come with the Store app listing (see `windows::store_apps`).
         _ => Vec::new(),
     }
 }

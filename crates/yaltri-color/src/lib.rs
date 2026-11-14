@@ -86,6 +86,26 @@ impl Rgb {
         ((1. - r - k) / (1. - k), (1. - g - k) / (1. - k), (1. - b - k) / (1. - k), k)
     }
 
+    /// OKLCH (Björn Ottosson's OKLab in polar form): lightness 0..1,
+    /// chroma (0 for grays, ~0.37 max in sRGB) and hue in degrees.
+    pub fn to_oklch(self) -> (f32, f32, f32) {
+        let lin = |c: u8| {
+            let c = c as f64 / 255.;
+            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+        };
+        let (r, g, b) = (lin(self.r), lin(self.g), lin(self.b));
+        let l = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b).cbrt();
+        let m = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b).cbrt();
+        let s = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b).cbrt();
+        let lightness = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
+        let a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+        let bb = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+        let chroma = (a * a + bb * bb).sqrt();
+        // Hue is meaningless for grays; report 0 like CSS "none".
+        let hue = if chroma < 2e-4 { 0. } else { bb.atan2(a).to_degrees().rem_euclid(360.) };
+        (lightness as f32, chroma as f32, hue as f32)
+    }
+
     /// Hue in degrees, whiteness and blackness 0..1.
     pub fn to_hwb(self) -> (f32, f32, f32) {
         let (h, s, v) = self.to_hsv();
@@ -150,6 +170,7 @@ pub enum Format {
     Rgb,
     Hsl,
     Hsv,
+    Oklch,
     Cmyk,
     Hwb,
     Decimal,
@@ -157,8 +178,17 @@ pub enum Format {
 }
 
 impl Format {
-    pub const ALL: [Format; 8] =
-        [Format::Hex, Format::Rgb, Format::Hsl, Format::Hsv, Format::Cmyk, Format::Hwb, Format::Decimal, Format::Float];
+    pub const ALL: [Format; 9] = [
+        Format::Hex,
+        Format::Rgb,
+        Format::Hsl,
+        Format::Hsv,
+        Format::Oklch,
+        Format::Cmyk,
+        Format::Hwb,
+        Format::Decimal,
+        Format::Float,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -166,6 +196,7 @@ impl Format {
             Format::Rgb => "RGB",
             Format::Hsl => "HSL",
             Format::Hsv => "HSV",
+            Format::Oklch => "OKLCH",
             Format::Cmyk => "CMYK",
             Format::Hwb => "HWB",
             Format::Decimal => "Decimal",
@@ -180,6 +211,7 @@ impl Format {
             Format::Rgb => "rgb",
             Format::Hsl => "hsl",
             Format::Hsv => "hsv",
+            Format::Oklch => "oklch",
             Format::Cmyk => "cmyk",
             Format::Hwb => "hwb",
             Format::Decimal => "decimal",
@@ -201,6 +233,10 @@ impl Format {
                 let (h, s, v) = c.to_hsv();
                 format!("hsv({}, {}%, {}%)", deg(h), pct(s), pct(v))
             }
+            Format::Oklch => {
+                let (l, ch, h) = c.to_oklch();
+                format!("oklch({}% {} {})", trim(l * 100., 1), trim(ch, 3), trim(h, 2))
+            }
             Format::Cmyk => {
                 let (cy, m, y, k) = c.to_cmyk();
                 format!("cmyk({}%, {}%, {}%, {}%)", pct(cy), pct(m), pct(y), pct(k))
@@ -216,6 +252,14 @@ impl Format {
             }
         }
     }
+}
+
+/// `v` rounded to `decimals`, without trailing zeros: 62.80 -> "62.8",
+/// 100.0 -> "100", -0.0 -> "0".
+fn trim(v: f32, decimals: usize) -> String {
+    let s = format!("{v:.decimals$}");
+    let s = if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_owned() } else { s };
+    if s == "-0" { "0".into() } else { s }
 }
 
 impl fmt::Display for Format {
@@ -320,6 +364,17 @@ mod tests {
         assert_eq!(Format::Decimal.format(DODGER), "2003199");
         assert_eq!(Format::Float.format(DODGER), "(0.118, 0.565, 1.000)");
         assert_eq!(Format::Cmyk.format(Rgb::new(0, 0, 0)), "cmyk(0%, 0%, 0%, 100%)");
+    }
+
+    #[test]
+    fn oklch_matches_reference_values() {
+        // Reference values from the CSS Color 4 / oklch.com conversions.
+        assert_eq!(Format::Oklch.format(Rgb::new(255, 0, 0)), "oklch(62.8% 0.258 29.23)");
+        assert_eq!(Format::Oklch.format(Rgb::new(255, 255, 255)), "oklch(100% 0 0)");
+        assert_eq!(Format::Oklch.format(Rgb::new(0, 0, 0)), "oklch(0% 0 0)");
+        assert_eq!(Format::Oklch.format(Rgb::new(0, 0, 255)), "oklch(45.2% 0.313 264.05)");
+        let (_, c, h) = Rgb::new(128, 128, 128).to_oklch();
+        assert!(c < 1e-3 && h == 0., "gray has no hue");
     }
 
     #[test]

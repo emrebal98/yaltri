@@ -60,6 +60,8 @@ pub fn discover(games: &GamesSettings) -> Vec<App> {
     #[cfg(windows)]
     let mut apps = apps;
     apps.extend(games::discover(games));
+    // Games listed with the apps (Xbox) follow their launcher's switch too.
+    apps.retain(|a| a.launcher.is_none_or(|l| l.enabled_in(games)));
     dedupe(apps)
 }
 
