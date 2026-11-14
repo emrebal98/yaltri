@@ -1,14 +1,15 @@
-//! The picker's magnifier, modelled on PowerToys' `ZoomWindowHelper` /
-//! `ZoomView` (MIT License, Copyright (c) Microsoft Corporation):
+//! The picker's magnifier, modelled on PowerToys v0.99 `ZoomWindowHelper`,
+//! `GridEffectBehavior` and `GridShader.fx` (MIT License, Copyright (c)
+//! Microsoft Corporation):
 //!
 //! - the first scroll-up freezes a 50x50 physical-pixel patch around the
 //!   cursor; the square stays centered on that point
 //! - four levels, factor 1x/2x/4x/8x, so the square is 50-400 logical px
-//! - once a cell is at least 4 px, a pixel grid appears in a small circle
-//!   around the pointer: black lines on light pixels, white on dark ones,
-//!   fading out towards the circle's edge
-//! - the cell under the pointer is outlined and its color is what gets shown
-//!   and picked
+//! - from 4x on (levels 3 and 4) the pointed pixel gets a thin outline and
+//!   a grid shows in a tiny circle around the pointer (radius 4% of the
+//!   square): grid pixels blend towards white, or black on near-white
+//!   pixels, strongest at the pointer
+//! - the pixel under the pointer is what gets shown and picked
 
 use yaltri_color::Rgb;
 use yaltri_platform::screen::Screenshot;
@@ -16,10 +17,10 @@ use yaltri_platform::screen::Screenshot;
 /// Captured patch side, in physical pixels.
 pub const BASE: usize = 50;
 pub const MAX_LEVEL: usize = 4;
-/// Grid lines appear once a cell is this many logical pixels wide.
-const GRID_MIN_CELL: f32 = 4.;
-/// Radius of the grid circle around the pointer, logical px.
-pub const GRID_RADIUS: f32 = 56.;
+/// The grid and outline appear from this magnification on.
+const OVERLAY_MIN_FACTOR: f32 = 4.;
+/// Grid circle radius as a fraction of the square's side (shader `radius`).
+const GRID_RADIUS_FRACTION: f32 = 0.04;
 
 /// Magnification at `level` (1..=MAX_LEVEL).
 pub fn factor(level: usize) -> f32 {
@@ -65,10 +66,6 @@ pub fn cell_at(x: f32, y: f32, side: f32) -> Option<(usize, usize)> {
     Some((((x / cell) as usize).min(BASE - 1), ((y / cell) as usize).min(BASE - 1)))
 }
 
-fn is_light(c: Rgb) -> bool {
-    0.299 * c.r as f32 + 0.587 * c.g as f32 + 0.114 * c.b as f32 > 140.
-}
-
 /// BGRA image of the patch at `physical_side` pixels, nearest-neighbor.
 /// Rendered once per zoom level.
 pub fn render(capture: &Capture, physical_side: u32) -> Vec<u8> {
@@ -87,46 +84,75 @@ pub fn render(capture: &Capture, physical_side: u32) -> Vec<u8> {
     out
 }
 
-/// One grid line segment (a cell's left or top edge), relative to the
-/// square's top-left, in logical px.
+/// One grid pixel: square-relative logical position, line color and how
+/// strongly it covers the image pixel (1 at the pointer, 0 at the radius).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct GridLine {
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
-    /// Black line (on a light pixel) or white (on a dark one).
-    pub black: bool,
-    /// 0..=160/255, fading with distance from the pointer.
-    pub alpha: f32,
+pub struct GridPixel {
+    pub x: i32,
+    pub y: i32,
+    /// White line, or black on near-white image pixels.
+    pub white: bool,
+    pub strength: f32,
 }
 
-/// Grid segments for the cells within `GRID_RADIUS` of `pointer` (relative
-/// to the square's top-left). Empty when cells are too small for a grid.
-pub fn grid_near(capture: &Capture, side: f32, pointer: (f32, f32)) -> Vec<GridLine> {
-    let cell = side / BASE as f32;
-    if cell < GRID_MIN_CELL {
-        return Vec::new();
+/// Outline around the pointed pixel: top-left, outer side, color.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Outline {
+    pub x: i32,
+    pub y: i32,
+    pub side: i32,
+    pub white: bool,
+}
+
+/// What to draw over the magnified image for a pointer at `pointer`
+/// (square-relative logical px). `None` below 4x or outside the square.
+pub fn pointer_overlay(capture: &Capture, level: usize, pointer: (f32, f32)) -> Option<(Outline, Vec<GridPixel>)> {
+    let factor = factor(level);
+    let side = BASE as f32 * factor;
+    if factor < OVERLAY_MIN_FACTOR || pointer.0 < 0. || pointer.1 < 0. || pointer.0 >= side || pointer.1 >= side {
+        return None;
     }
-    let reach = (GRID_RADIUS / cell).ceil() as i32 + 1;
-    let (pc, pr) = ((pointer.0 / cell) as i32, (pointer.1 / cell) as i32);
-    let mut lines = Vec::new();
-    for row in (pr - reach).max(0)..=(pr + reach).min(BASE as i32 - 1) {
-        for col in (pc - reach).max(0)..=(pc + reach).min(BASE as i32 - 1) {
-            let (mx, my) = ((col as f32 + 0.5) * cell, (row as f32 + 0.5) * cell);
-            let dist = ((mx - pointer.0).powi(2) + (my - pointer.1).powi(2)).sqrt();
-            let fade = 1. - dist / GRID_RADIUS;
-            if fade <= 0.05 {
+    let square = factor as i32; // cell size in px
+    let near_white = |x: i32, y: i32| {
+        let c = capture.at((x / square).clamp(0, BASE as i32 - 1) as usize, (y / square).clamp(0, BASE as i32 - 1) as usize);
+        c.r > 204 && c.g > 204 && c.b > 204
+    };
+    let (mx, my) = (pointer.0 as i32, pointer.1 as i32);
+    // Shader: topLeftRectangle = mouse - mouse % squareSize - 1.
+    let (tx, ty) = (mx - mx % square - 1, my - my % square - 1);
+    let outline = Outline { x: tx, y: ty, side: square + 3, white: !near_white(mx, my) };
+
+    // The ring between the outline and the cell keeps the image as is.
+    let in_inner_ring = |x: i32, y: i32| {
+        let (a, b) = (tx + 1, tx + square + 1);
+        let (c, d) = (ty + 1, ty + square + 1);
+        ((a..=b).contains(&x) && (y == c || y == d)) || ((c..=d).contains(&y) && (x == a || x == b))
+    };
+    let on_outline = |x: i32, y: i32| {
+        let (a, b) = (tx, tx + square + 2);
+        let (c, d) = (ty, ty + square + 2);
+        ((a..=b).contains(&x) && (y == c || y == d)) || ((c..=d).contains(&y) && (x == a || x == b))
+    };
+
+    let radius = GRID_RADIUS_FRACTION * side;
+    let reach = radius.ceil() as i32;
+    let mut grid = Vec::new();
+    for y in (my - reach).max(0)..=(my + reach).min(side as i32 - 1) {
+        for x in (mx - reach).max(0)..=(mx + reach).min(side as i32 - 1) {
+            if x % square != 0 && y % square != 0 {
                 continue;
             }
-            let alpha = fade.clamp(0., 1.) * 160. / 255.;
-            let black = is_light(capture.at(col as usize, row as usize));
-            let (x, y) = (col as f32 * cell, row as f32 * cell);
-            lines.push(GridLine { x, y, w: 1., h: cell, black, alpha });
-            lines.push(GridLine { x, y, w: cell, h: 1., black, alpha });
+            if in_inner_ring(x, y) || on_outline(x, y) {
+                continue;
+            }
+            let d = (((x - mx) * (x - mx) + (y - my) * (y - my)) as f32).sqrt();
+            if d > radius {
+                continue;
+            }
+            grid.push(GridPixel { x, y, white: !near_white(x, y), strength: 1. - d / radius });
         }
     }
-    lines
+    Some((outline, grid))
 }
 
 /// Eased size during the 200 ms resize between levels: sine ease-out when
@@ -190,27 +216,49 @@ mod tests {
     }
 
     #[test]
-    fn grid_is_a_small_fading_circle_around_the_pointer() {
+    fn nothing_drawn_below_4x() {
         let c = Capture::from_shot(&shot(), 100, 100);
-        let side = super::side(4); // 400 px, 8 px cells
-        let pointer = (100., 300.);
-        let lines = grid_near(&c, side, pointer);
-        assert!(!lines.is_empty());
-        let dist = |l: &GridLine| ((l.x - pointer.0).powi(2) + (l.y - pointer.1).powi(2)).sqrt();
-        // Nothing far from the pointer: it is not a full-square grid.
-        assert!(lines.iter().all(|l| dist(l) <= GRID_RADIUS + 8. * 1.5), "outside circle");
-        assert!(lines.len() < 2 * 15 * 15, "{} segments", lines.len());
-        // Strongest near the pointer.
-        let near = lines.iter().min_by(|a, b| dist(a).total_cmp(&dist(b))).unwrap();
-        let far = lines.iter().max_by(|a, b| dist(a).total_cmp(&dist(b))).unwrap();
-        assert!(near.alpha > far.alpha);
+        assert!(pointer_overlay(&c, 1, (20., 20.)).is_none());
+        assert!(pointer_overlay(&c, 2, (20., 20.)).is_none());
+        assert!(pointer_overlay(&c, 3, (20., 20.)).is_some());
+        assert!(pointer_overlay(&c, 4, (20., 20.)).is_some());
+        assert!(pointer_overlay(&c, 4, (400., 20.)).is_none(), "outside the square");
     }
 
     #[test]
-    fn no_grid_for_small_cells() {
+    fn outline_frames_the_pointed_cell_one_px_out() {
         let c = Capture::from_shot(&shot(), 100, 100);
-        assert!(grid_near(&c, super::side(2), (50., 50.)).is_empty());
-        assert!(!grid_near(&c, super::side(3), (100., 100.)).is_empty());
+        // Level 4: 8 px cells; pointer inside cell (2, 3).
+        let (outline, _) = pointer_overlay(&c, 4, (21., 29.)).unwrap();
+        assert_eq!((outline.x, outline.y, outline.side), (15, 23, 11));
+        assert!(outline.white, "dark pixel -> white outline");
+    }
+
+    #[test]
+    fn grid_is_a_tiny_circle_strongest_at_the_pointer() {
+        let c = Capture::from_shot(&shot(), 100, 100);
+        let pointer = (204., 196.);
+        let (_, grid) = pointer_overlay(&c, 4, pointer).unwrap();
+        let radius = 0.04 * 400.; // 16 px
+        assert!(!grid.is_empty());
+        for g in &grid {
+            let d = (((g.x as f32 - pointer.0).powi(2)) + ((g.y as f32 - pointer.1).powi(2))).sqrt();
+            assert!(d <= radius + 0.01, "{g:?} outside radius");
+            assert!(g.x % 8 == 0 || g.y % 8 == 0, "{g:?} not on a grid line");
+        }
+        // The outline and the ring inside it stay free of grid lines.
+        let (outline, _) = pointer_overlay(&c, 4, pointer).unwrap();
+        let inside = |g: &GridPixel| {
+            (outline.x..outline.x + outline.side).contains(&g.x) && (outline.y..outline.y + outline.side).contains(&g.y)
+        };
+        assert!(grid.iter().all(|g| !inside(g)), "grid inside the outline box");
+        // Fades out: strength drops with distance.
+        let near = grid.iter().map(|g| g.strength).fold(0., f32::max);
+        let far = grid.iter().map(|g| g.strength).fold(1., f32::min);
+        assert!(near > far);
+        // Level 3: half the radius.
+        let (_, small) = pointer_overlay(&c, 3, (102., 98.)).unwrap();
+        assert!(small.iter().all(|g| ((g.x - 102).pow(2) + (g.y - 98).pow(2)) as f32 <= 64.01));
     }
 
     #[test]

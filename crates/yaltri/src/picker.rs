@@ -353,42 +353,19 @@ impl PickerOverlay {
         let left = loupe.center.x.as_f32() - side / 2.;
         let top = loupe.center.y.as_f32() - side / 2.;
 
-        // Grid circle and pointer highlight only once the size settled.
-        let highlight = (!loupe.animating())
+        // From 4x on: outline around the pointed pixel and the tiny grid
+        // circle, once the size settled (PowerToys' grid shader).
+        let overlay = (!loupe.animating())
             .then_some(self.cursor)
             .flatten()
-            .and_then(|c| loupe.cell_under(c).map(|cell| (c, cell)))
-            .map(|(cursor, (col, row))| {
-                let cell = side / zoom::BASE as f32;
-                let color = loupe.capture.at(col, row);
-                let ring = if color.is_dark() { gpui_kit::white() } else { gpui_kit::black() };
-                let pointer = (cursor.x.as_f32() - left, cursor.y.as_f32() - top);
-                let grid = zoom::grid_near(&loupe.capture, side, pointer).into_iter().map(|l| {
-                    let base = if l.black { gpui_kit::black() } else { gpui_kit::white() };
-                    div()
-                        .absolute()
-                        .left(px(LOUPE_CHROME + l.x))
-                        .top(px(LOUPE_CHROME + l.y))
-                        .w(px(l.w))
-                        .h(px(l.h))
-                        .bg(base.opacity(l.alpha))
-                });
-                grid.chain([
-                    div()
-                        .absolute()
-                        .left(px(LOUPE_CHROME + col as f32 * cell))
-                        .top(px(LOUPE_CHROME + row as f32 * cell))
-                        .size(px(cell))
-                        .border_2()
-                        .border_color(ring),
-                    div()
-                        .absolute()
-                        .left(px(cursor.x.as_f32() - left + LOUPE_CHROME - 2.))
-                        .top(px(cursor.y.as_f32() - top + LOUPE_CHROME - 2.))
-                        .size(px(4.))
-                        .bg(fill(color)),
-                ])
-                .collect::<Vec<_>>()
+            .and_then(|c| zoom::pointer_overlay(&loupe.capture, loupe.level, (c.x.as_f32() - left, c.y.as_f32() - top)))
+            .map(|(outline, grid)| {
+                let at = |x: i32, y: i32| div().absolute().left(px(LOUPE_CHROME + x as f32)).top(px(LOUPE_CHROME + y as f32));
+                let line = |white: bool| if white { gpui_kit::white() } else { gpui_kit::black() };
+                grid.into_iter()
+                    .map(|g| at(g.x, g.y).size(px(1.)).bg(line(g.white).opacity(g.strength)))
+                    .chain([at(outline.x, outline.y).size(px(outline.side as f32)).border_1().border_color(line(outline.white))])
+                    .collect::<Vec<_>>()
             })
             .unwrap_or_default();
 
@@ -405,7 +382,7 @@ impl PickerOverlay {
             .shadow_lg()
             .child(img(loupe.image.clone()).size(px(side)).object_fit(ObjectFit::Fill))
             // Deferred: drawn after (above) the magnified image sprite.
-            .children(highlight.into_iter().map(gpui_kit::deferred))
+            .children(overlay.into_iter().map(gpui_kit::deferred))
     }
 
     /// PowerToys' color box: swatch, code and color name, next to the cursor
