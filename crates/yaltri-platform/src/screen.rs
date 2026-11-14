@@ -46,6 +46,18 @@ impl Screenshot {
     }
 }
 
+/// Physical desktop position of a window's content area (`hwnd`'s client
+/// origin). Window placement can differ from what was requested.
+#[cfg(windows)]
+pub fn client_origin(hwnd: isize) -> Option<(i32, i32)> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+    let mut point = POINT { x: 0, y: 0 };
+    // SAFETY: `hwnd` is a live window handle owned by this process.
+    let ok = unsafe { ClientToScreen(hwnd as _, &mut point) };
+    (ok != 0).then_some((point.x, point.y))
+}
+
 /// Captures the whole desktop. Fails on Wayland (use [`pick_color_portal`]).
 pub fn capture() -> Result<Screenshot> {
     imp::capture()

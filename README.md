@@ -25,8 +25,8 @@ Launcher: `↑/↓` seç, `Enter` aç (hesap sonucunu kopyalar), `Ctrl+Enter` kl
 ### Renk seçici
 
 `yaltri toggle picker` (varsayılan kısayol `Win+Shift+C`; PowerToys açıksa çakışır, ayarlardan değiştirin).
-İmleç yanında büyüteç ve renk kodu görünür: tekerlek yakınlaştırır, sol tık seçer ve panoya kopyalar,
-sağ tık / `Esc` iptal eder. Seçimden sonra editör açılır: geçmiş (sağ tık siler), açık/koyu tonlar,
+İmleç yanında renk ve kodu görünür; tekerleği yukarı çevirince imlecin olduğu yerde büyüteç açılır ve
+her adımda büyür, aşağı çevirince küçülüp kapanır. Sol tık seçer ve panoya kopyalar, sağ tık / `Esc` iptal eder. Seçimden sonra editör açılır: geçmiş (sağ tık siler), açık/koyu tonlar,
 HEX · RGB · HSL · HSV · CMYK · HWB · Decimal · Float. ★ ile seçimde kopyalanacak format belirlenir.
 
 - Windows / X11: masaüstü görüntüsü alınır, her ekranda dondurulmuş haliyle gösterilir.

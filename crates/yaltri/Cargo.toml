@@ -9,6 +9,7 @@ anyhow.workspace = true
 futures.workspace = true
 gpui-kit.workspace = true
 image.workspace = true
+raw-window-handle = "0.6"
 open.workspace = true
 tracing.workspace = true
 tracing-appender.workspace = true

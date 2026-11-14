@@ -8790,6 +8790,7 @@ dependencies = [
  "gpui-kit",
  "image",
  "open",
+ "raw-window-handle",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
