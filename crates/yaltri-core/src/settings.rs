@@ -113,7 +113,7 @@ impl Default for LauncherSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            hotkey: "Alt+Space".into(),
+            hotkey: "Super+Space".into(),
             max_results: 8,
         }
     }
@@ -326,7 +326,7 @@ mod tests {
     #[test]
     fn detects_conflicts_only_between_enabled_tools() {
         let mut s = Settings::default();
-        s.picker.hotkey = "space + ALT".into();
+        s.picker.hotkey = "space + SUPER".into();
         s.picker.enabled = false;
         assert!(s.hotkey_conflicts().is_empty(), "disabled tools never conflict");
         s.picker.enabled = true;
