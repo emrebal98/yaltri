@@ -381,6 +381,8 @@ impl Render for Launcher {
                     .child(Input::new(&self.input).appearance(false).large()),
             )
             .child(chips_row)
-            .children(rows)
+            // One block: the root's gap would otherwise also space every row,
+            // which the window height does not account for.
+            .child(div().flex().flex_col().flex_shrink_0().children(rows))
     }
 }
