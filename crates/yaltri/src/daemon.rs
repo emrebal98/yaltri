@@ -2,6 +2,7 @@
 //! and the tool windows; every request arrives as a `Command`.
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::Result;
 use futures::StreamExt as _;
@@ -40,11 +41,15 @@ pub struct Daemon {
     tx: CommandSender,
     tray: Option<Tray>,
     hotkeys: Option<Hotkeys>,
+    /// True while a shortcut is being recorded in settings.
+    hotkeys_suspended: bool,
     files: Option<(Scope, FileIndexer)>,
     apps: Option<Arc<AppsProvider>>,
 }
 
 impl Global for Daemon {}
+
+const HOTKEY_RETRY: Duration = Duration::from_secs(20);
 
 pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<()> {
     let loaded = Settings::load(&paths.settings_file())?;
@@ -82,6 +87,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 tx: tx.clone(),
                 tray: None,
                 hotkeys: None,
+                hotkeys_suspended: false,
                 files: None,
                 apps: None,
             };
@@ -92,6 +98,16 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
             if let Some(cmd) = initial {
                 handle(cmd, cx);
             }
+
+            // A shortcut held by another program (e.g. PowerToys) becomes
+            // ours as soon as that program lets it go.
+            cx.spawn(async move |cx| {
+                loop {
+                    cx.background_executor().timer(HOTKEY_RETRY).await;
+                    cx.update(|cx| cx.global_mut::<Daemon>().retry_failed_hotkeys());
+                }
+            })
+            .detach();
 
             cx.spawn(async move |cx| {
                 while let Some(cmd) = rx.next().await {
@@ -132,6 +148,7 @@ impl Daemon {
     /// Releases every global hotkey (while a shortcut is being recorded, so
     /// the keys reach the recorder) or restores them from settings.
     pub fn set_hotkeys_suspended(&mut self, suspended: bool) {
+        self.hotkeys_suspended = suspended;
         if suspended {
             if let Some(hotkeys) = self.hotkeys.as_mut() {
                 hotkeys.apply(&[]);
@@ -150,7 +167,24 @@ impl Daemon {
             .filter(|t| self.settings.is_enabled(*t) && is_implemented(*t))
             .map(|t| (t, self.settings.hotkey(t).to_owned()))
             .collect();
-        self.hotkey_errors = hotkeys.apply(&bindings);
+        let errors = hotkeys.apply(&bindings);
+        if errors != self.hotkey_errors {
+            for e in &errors {
+                tracing::warn!(tool = %e.tool, "{}", e.message);
+            }
+        }
+        self.hotkey_errors = errors;
+    }
+
+    fn retry_failed_hotkeys(&mut self) {
+        if self.hotkeys_suspended || self.hotkey_errors.is_empty() {
+            return;
+        }
+        let before = self.hotkey_errors.len();
+        self.apply_hotkeys();
+        if self.hotkey_errors.len() < before {
+            tracing::info!("a previously taken shortcut is now registered");
+        }
     }
 
     /// Persists `settings` and re-applies everything that depends on them.

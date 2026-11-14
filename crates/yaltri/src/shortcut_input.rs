@@ -1,7 +1,11 @@
 //! Shortcut recorder (PowerToys style): shows the shortcut as key caps; click
 //! it and press the new combination. Esc cancels, Backspace/Delete clears.
 //! Global hotkeys are suspended while recording so the combination reaches
-//! this window instead of triggering a tool.
+//! this window instead of triggering a tool. On Windows a low-level keyboard
+//! hook captures the keys system-wide, so combinations held by other
+//! programs (PowerToys' `Win+Shift+C`) can be recorded too.
+
+use std::time::Duration;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::ActiveTheme as _;
@@ -9,14 +13,26 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, Context, ElementId, EventEmitter, FocusHandle, InteractiveElement as _, IntoElement, KeystrokeEvent,
     Modifiers, ModifiersChangedEvent, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Window, div, px,
+    Styled as _, Subscription, Task, Window, div, px,
 };
-use yaltri_platform::keys::{self, SUPER_NAME};
+use yaltri_platform::keys::{self, RecordError, SUPER_NAME};
 
 use crate::daemon::Daemon;
 
+/// Recording ends by itself after this, as a safety net: while recording on
+/// Windows every key press system-wide goes to the recorder.
+const RECORD_TIMEOUT: Duration = Duration::from_secs(15);
+
 /// Emitted when the user recorded or cleared a shortcut.
 pub struct ShortcutChanged;
+
+/// Result of one key press while recording.
+enum Outcome {
+    Held(Modifiers),
+    Combo(Result<String, RecordError>),
+    Cancel,
+    Clear,
+}
 
 pub struct ShortcutInput {
     id: ElementId,
@@ -27,6 +43,10 @@ pub struct ShortcutInput {
     error: Option<SharedString>,
     focus: FocusHandle,
     intercept: Option<Subscription>,
+    /// System-wide key capture plus the task feeding it into this view.
+    #[cfg(windows)]
+    grab: Option<(yaltri_platform::keygrab::KeyGrab, Task<()>)>,
+    timeout: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -36,8 +56,13 @@ impl ShortcutInput {
     pub fn new(id: impl Into<ElementId>, value: String, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         let subscriptions = vec![
-            // Clicking elsewhere ends recording.
+            // Clicking elsewhere, or switching to another window, ends recording.
             cx.on_blur(&focus, window, |this, _, cx| this.stop(cx)),
+            cx.observe_window_activation(window, |this, window, cx| {
+                if !window.is_window_active() {
+                    this.stop(cx);
+                }
+            }),
             // Never leave hotkeys suspended if the window closes mid-recording.
             cx.on_release(|this, cx| {
                 if this.recording {
@@ -53,6 +78,9 @@ impl ShortcutInput {
             error: None,
             focus,
             intercept: None,
+            #[cfg(windows)]
+            grab: None,
+            timeout: None,
             _subscriptions: subscriptions,
         }
     }
@@ -82,7 +110,47 @@ impl ShortcutInput {
             let _ = weak.update(cx, |this, cx| this.on_keystroke(event, window, cx));
             cx.stop_propagation();
         }));
+        #[cfg(windows)]
+        self.start_grab(window, cx);
+        self.timeout = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(RECORD_TIMEOUT).await;
+            let _ = this.update(cx, |this, cx| this.stop(cx));
+        }));
         cx.notify();
+    }
+
+    #[cfg(windows)]
+    fn start_grab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        use futures::StreamExt as _;
+        use yaltri_platform::keygrab::{Grabbed, KeyGrab};
+
+        let (tx, mut rx) = futures::channel::mpsc::unbounded::<Grabbed>();
+        let grab = match KeyGrab::start(move |event| {
+            let _ = tx.unbounded_send(event);
+        }) {
+            Ok(g) => g,
+            Err(e) => {
+                // The in-window interceptor still works for free combinations.
+                tracing::warn!("keyboard hook unavailable: {e:#}");
+                return;
+            }
+        };
+        let task = cx.spawn_in(window, async move |this, cx| {
+            while let Some(event) = rx.next().await {
+                let outcome = match event {
+                    Grabbed::Modifiers { ctrl, alt, shift, win } => {
+                        Outcome::Held(Modifiers { control: ctrl, alt, shift, platform: win, ..Default::default() })
+                    }
+                    Grabbed::Combo(result) => Outcome::Combo(result),
+                    Grabbed::Cancel => Outcome::Cancel,
+                    Grabbed::Clear => Outcome::Clear,
+                };
+                if this.update_in(cx, |this, window, cx| this.apply(outcome, window, cx)).is_err() {
+                    break;
+                }
+            }
+        });
+        self.grab = Some((grab, task));
     }
 
     fn stop(&mut self, cx: &mut Context<Self>) {
@@ -91,6 +159,11 @@ impl ShortcutInput {
         }
         self.recording = false;
         self.intercept = None;
+        #[cfg(windows)]
+        {
+            self.grab = None; // unhooks the keyboard
+        }
+        self.timeout = None;
         self.held = Modifiers::default();
         self.error = None;
         cx.global_mut::<Daemon>().set_hotkeys_suspended(false);
@@ -104,25 +177,39 @@ impl ShortcutInput {
         if keys::is_modifier_key(&ks.key) {
             return;
         }
-        match ks.key.as_str() {
-            "escape" if !any_modifier => self.stop(cx),
-            "backspace" | "delete" if !any_modifier => {
+        let outcome = match ks.key.as_str() {
+            "escape" if !any_modifier => Outcome::Cancel,
+            "backspace" | "delete" if !any_modifier => Outcome::Clear,
+            key => Outcome::Combo(keys::spec_from_press(m.control, m.alt, m.shift, m.platform, key)),
+        };
+        self.apply(outcome, window, cx);
+    }
+
+    fn apply(&mut self, outcome: Outcome, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.recording {
+            return;
+        }
+        match outcome {
+            Outcome::Held(m) => {
+                self.held = m;
+                cx.notify();
+            }
+            Outcome::Cancel => self.stop(cx),
+            Outcome::Clear => {
                 self.value.clear();
                 self.stop(cx);
                 cx.emit(ShortcutChanged);
             }
-            key => match keys::spec_from_press(m.control, m.alt, m.shift, m.platform, key) {
-                Ok(spec) => {
-                    self.value = spec;
-                    self.stop(cx);
-                    window.blur(cx);
-                    cx.emit(ShortcutChanged);
-                }
-                Err(e) => {
-                    self.error = Some(e.message().into());
-                    cx.notify();
-                }
-            },
+            Outcome::Combo(Ok(spec)) => {
+                self.value = spec;
+                self.stop(cx);
+                window.blur(cx);
+                cx.emit(ShortcutChanged);
+            }
+            Outcome::Combo(Err(e)) => {
+                self.error = Some(e.message().into());
+                cx.notify();
+            }
         }
     }
 

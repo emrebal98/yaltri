@@ -64,7 +64,8 @@ pub fn is_modifier_key(key: &str) -> bool {
     matches!(key, "shift" | "control" | "ctrl" | "alt" | "platform" | "super" | "cmd" | "win" | "function" | "fn")
 }
 
-/// Builds `Ctrl+Alt+Shift+Win+Key` from a key press.
+/// Builds `Win+Ctrl+Alt+Shift+Key` from a key press (the order Windows
+/// and PowerToys display).
 pub fn spec_from_press(ctrl: bool, alt: bool, shift: bool, sup: bool, key: &str) -> Result<String, RecordError> {
     let name = key_name(key).ok_or(RecordError::UnsupportedKey)?;
     let is_fkey = name.starts_with('F') && name.len() > 1 && name[1..].chars().all(|c| c.is_ascii_digit());
@@ -76,6 +77,9 @@ pub fn spec_from_press(ctrl: bool, alt: bool, shift: bool, sup: bool, key: &str)
         return Err(RecordError::NeedsModifier);
     }
     let mut parts: Vec<&str> = Vec::new();
+    if sup {
+        parts.push(SUPER_NAME);
+    }
     if ctrl {
         parts.push("Ctrl");
     }
@@ -84,9 +88,6 @@ pub fn spec_from_press(ctrl: bool, alt: bool, shift: bool, sup: bool, key: &str)
     }
     if shift {
         parts.push("Shift");
-    }
-    if sup {
-        parts.push(SUPER_NAME);
     }
     parts.push(&name);
     Ok(parts.join("+"))
@@ -115,7 +116,7 @@ mod tests {
     #[test]
     fn builds_specs_in_canonical_order() {
         assert_eq!(spec_from_press(true, true, false, false, "space").unwrap(), "Ctrl+Alt+Space");
-        assert_eq!(spec_from_press(false, false, true, true, "c").unwrap(), format!("Shift+{SUPER_NAME}+C"));
+        assert_eq!(spec_from_press(false, false, true, true, "c").unwrap(), format!("{SUPER_NAME}+Shift+C"));
         assert_eq!(spec_from_press(false, false, false, false, "f5").unwrap(), "F5");
         assert_eq!(spec_from_press(true, false, false, false, "pageup").unwrap(), "Ctrl+PageUp");
     }

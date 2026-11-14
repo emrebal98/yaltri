@@ -5,6 +5,8 @@
 pub mod hotkeys;
 mod icon;
 pub mod ipc;
+#[cfg(windows)]
+pub mod keygrab;
 pub mod keys;
 pub mod launch;
 pub mod screen;

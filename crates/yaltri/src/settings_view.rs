@@ -64,10 +64,7 @@ impl SettingsView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let daemon = cx.global::<Daemon>();
         let settings = daemon.settings.clone();
-        let mut status = daemon.settings_warning.clone().map(|w| (true, w.into()));
-        if status.is_none() && !daemon.hotkey_errors.is_empty() {
-            status = Some((true, hotkey_error_text(daemon).into()));
-        }
+        let status = daemon.settings_warning.clone().map(|w| (true, w.into()));
         let mut subscriptions = Vec::new();
         let rows = ToolId::ALL
             .into_iter()
@@ -124,21 +121,11 @@ impl SettingsView {
 
         let daemon = cx.global_mut::<Daemon>();
         self.status = Some(match daemon.update_settings(settings) {
-            Ok(()) if daemon.hotkey_errors.is_empty() => (false, "Kaydedildi.".into()),
-            Ok(()) => (true, hotkey_error_text(daemon).into()),
+            Ok(()) => (false, "Kaydedildi.".into()),
             Err(e) => (true, format!("Kaydedilemedi: {e:#}").into()),
         });
         cx.notify();
     }
-}
-
-fn hotkey_error_text(daemon: &Daemon) -> String {
-    daemon
-        .hotkey_errors
-        .iter()
-        .map(|e| format!("{}: {}", e.tool.display_name(), e.message))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 /// `1893440` -> `1.893.440`
@@ -196,6 +183,7 @@ impl Render for SettingsView {
         let session = daemon.session;
         let settings_path = daemon.paths.settings_file().display().to_string();
         let index_text = index_status_text(daemon);
+        let hotkey_errors = daemon.hotkey_errors.clone();
 
         let tool_rows = self.rows.iter().enumerate().map(|(ix, row)| {
             let implemented = is_implemented(row.tool);
@@ -237,6 +225,10 @@ impl Render for SettingsView {
                         .gap_2()
                         .child(div().w(px(80.)).text_sm().text_color(theme.muted_foreground).child("Kısayol"))
                         .child(div().flex_1().child(row.hotkey.clone())),
+                )
+                .when_some(
+                    hotkey_errors.iter().find(|e| e.tool == row.tool && row.enabled).map(|e| e.message.clone()),
+                    |d, msg| d.child(div().text_xs().text_color(theme.danger).child(msg)),
                 )
                 .when(row.tool == ToolId::Picker, |d| {
                     d.child(
