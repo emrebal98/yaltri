@@ -1,0 +1,31 @@
+name: PR lint
+
+# Conventional, lowercase PR title and commit subjects. Fast and runs for
+# every PR (docs too), unlike the build.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  titles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: PR title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: bash scripts/check-commit-title.sh "$TITLE"
+
+      - name: Commit subjects
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          status=0
+          while IFS= read -r subject; do
+            bash scripts/check-commit-title.sh "$subject" || status=1
+          done <<< "$(git log --format=%s "$BASE..$HEAD")"
+          exit $status

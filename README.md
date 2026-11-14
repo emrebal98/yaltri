@@ -187,6 +187,18 @@ The UI is built with [GPUI](https://gpui.rs). GPUI is pre-1.0, so its version is
 Each README translation lives next to this file as `README.<lang>.md` (for example `README.tr.md`).
 To add one, copy `README.md`, translate it, and add a link to the language line at the top of every README.
 
+### Contributing workflow
+
+- Every change goes on its own branch and lands through a pull request; nothing is pushed to `main` directly.
+- Commit messages and PR titles follow [Conventional Commits](https://www.conventionalcommits.org), all lowercase:
+  `type(scope): summary`, for example `feat(launcher): filter results by kind` or `fix(tray): follow the system theme`.
+  Types: `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `ci`, `chore`. The scope is the area: `launcher`, `picker`, `settings`, `tray`, `files`, `apps`…
+- CI (clippy + tests on Windows and Linux) runs on pull requests; a lint job checks the PR title and commit subjects.
+- Turn on the local check once per clone, so a wrong commit message is refused right away:
+  ```sh
+  git config core.hooksPath .githooks
+  ```
+
 ### Releasing
 
 1. Bump `[workspace.package] version` in `Cargo.toml` and commit.
