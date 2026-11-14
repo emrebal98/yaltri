@@ -172,6 +172,9 @@ impl Daemon {
             for e in &errors {
                 tracing::warn!(tool = %e.tool, "{}", e.message);
             }
+            if errors.is_empty() {
+                tracing::info!("all shortcuts active");
+            }
         }
         self.hotkey_errors = errors;
     }
@@ -180,11 +183,7 @@ impl Daemon {
         if self.hotkeys_suspended || self.hotkey_errors.is_empty() {
             return;
         }
-        let before = self.hotkey_errors.len();
         self.apply_hotkeys();
-        if self.hotkey_errors.len() < before {
-            tracing::info!("a previously taken shortcut is now registered");
-        }
     }
 
     /// Persists `settings` and re-applies everything that depends on them.

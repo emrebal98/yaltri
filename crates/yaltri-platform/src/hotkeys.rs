@@ -85,9 +85,20 @@ impl Hotkeys {
                     continue;
                 }
             };
+            #[cfg(windows)]
+            if let Some(module) = crate::hookkeys::combo_from_spec(spec).and_then(|c| crate::powertoys::owner_of(&c)) {
+                // Still registered below: it works as soon as PowerToys lets go.
+                errors.push(HotkeyError {
+                    tool: *tool,
+                    message: format!(
+                        "Bu kısayolu PowerToys da kullanıyor ({module}); tuşa basınca PowerToys açılıyor. \
+                         PowerToys ayarlarında {module} kısayolunu değiştirin veya modülü kapatın."
+                    ),
+                });
+            }
             match self.manager.register(hk) {
                 Ok(()) => {
-                    tracing::info!(%tool, spec, "hotkey registered");
+                    tracing::debug!(%tool, spec, "hotkey registered");
                     map.insert(hk.id(), *tool);
                     self.registered.push(hk);
                 }
@@ -95,7 +106,7 @@ impl Hotkeys {
                     tracing::debug!(%tool, spec, %e, "RegisterHotKey refused");
                     #[cfg(windows)]
                     if let Some(combo) = crate::hookkeys::combo_from_spec(spec) {
-                        tracing::info!(%tool, spec, "shortcut is reserved elsewhere; using keyboard hook");
+                        tracing::debug!(%tool, spec, "shortcut is reserved elsewhere; using keyboard hook");
                         hooked.push((combo, *tool));
                         continue;
                     }
