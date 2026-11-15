@@ -192,9 +192,17 @@ fn run(cmd: &mut Command) -> Result<()> {
 
 fn sha256_hex(file: &Path) -> Result<String> {
     use sha2::{Digest as _, Sha256};
+    use std::io::Read as _;
     let mut hasher = Sha256::new();
     let mut reader = std::fs::File::open(file).with_context(|| format!("opening {}", file.display()))?;
-    std::io::copy(&mut reader, &mut hasher)?;
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = reader.read(&mut buf).with_context(|| format!("reading {}", file.display()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
     Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
