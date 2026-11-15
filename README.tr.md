@@ -1,21 +1,22 @@
-# Yaltri
+<p align="center"><img src="design/brand/app-icon.svg" width="112" height="112" alt="Yaltri ikonu"></p>
 
-[English](README.md) · **Türkçe**
+<h1 align="center">Yaltri</h1>
 
-*Yaltrı-* (Göktürkçe): parıldamak.
+<p align="center">
+  <b>Sistem tepsisinde bekleyen küçük bir araç kutusu.</b><br>
+  Kısayola bas, aracı kullan, işin bitince kaybolsun.
+</p>
 
-Yaltri, sistem tepsisinde sessizce bekleyen küçük bir yardımcı. Bir kısayolla açılır,
-aradığını bulur, işin bitince kaybolur.
+<p align="center">
+  <a href="https://github.com/emrebal98/yaltri/releases"><img src="https://img.shields.io/github/v/release/emrebal98/yaltri?include_prereleases" alt="Release"></a>
+  <a href="https://github.com/emrebal98/yaltri/actions/workflows/ci.yml"><img src="https://github.com/emrebal98/yaltri/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+</p>
 
-- **Ara:** Uygulamalar, dosyalar ve oyunlar tek kutuda. Yazmaya başladığın anda sonuçlar gelir.
-- **Hesapla:** `2^10`, `5 km to mi`, `=pi`. Sonuç Enter ile panoya kopyalanır.
-- **Renk seç:** Ekranın herhangi bir yerinden renk al, istediğin formatta kopyala.
+<p align="center"><a href="README.md">English</a> · <b>Türkçe</b></p>
 
 Windows ve Linux'ta (Ubuntu, Arch) aynı görünür. Tek küçük bir programdır, yönetici izni istemez; internete yalnızca güncelleme denetlerken bağlanır.
-
-[![Release](https://img.shields.io/github/v/release/emrebal98/yaltri?include_prereleases)](https://github.com/emrebal98/yaltri/releases)
-[![CI](https://github.com/emrebal98/yaltri/actions/workflows/ci.yml/badge.svg)](https://github.com/emrebal98/yaltri/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+*Yaltrı-* Göktürkçede "parıldamak" demek.
 
 ---
 
@@ -103,7 +104,7 @@ Yazarken filtrelemek için başa kısaltma ve boşluk yaz: `/u ` uygulama, `/d `
 - **Sol tık** rengi seçer ve kopyalar. **Sağ tık** veya `Esc` vazgeçer.
 - Seçimden sonra açılan editörde renk geçmişi, açık/koyu tonlar ve 9 format var:
   HEX, RGB, HSL, HSV, OKLCH, CMYK, HWB, Decimal, Float.
-  ★ ile işaretlediğin format, bir sonraki seçimde doğrudan kopyalanır.
+  Seçimde kopyalanacak format **Ayarlar → Renk seçici**'den belirlenir.
 
 ### Komut satırı
 

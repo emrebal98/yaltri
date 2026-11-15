@@ -1,21 +1,22 @@
-# Yaltri
+<p align="center"><img src="design/brand/app-icon.svg" width="112" height="112" alt="Yaltri icon"></p>
 
-**English** · [Türkçe](README.tr.md)
+<h1 align="center">Yaltri</h1>
 
-*Yaltrı-* (Old Turkic): to shine.
+<p align="center">
+  <b>A small toolbox that waits in your system tray.</b><br>
+  Press a shortcut, use the tool, and it gets out of your way.
+</p>
 
-Yaltri is a small helper that waits quietly in your system tray. Press a shortcut, find what
-you need, and it gets out of your way.
+<p align="center">
+  <a href="https://github.com/emrebal98/yaltri/releases"><img src="https://img.shields.io/github/v/release/emrebal98/yaltri?include_prereleases" alt="Release"></a>
+  <a href="https://github.com/emrebal98/yaltri/actions/workflows/ci.yml"><img src="https://github.com/emrebal98/yaltri/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+</p>
 
-- **Search:** Apps, files and games in one box. Results appear as you type.
-- **Calculate:** `2^10`, `5 km to mi`, `=pi`. Press Enter to copy the result.
-- **Pick colors:** Grab a color from anywhere on screen and copy it in the format you want.
+<p align="center"><b>English</b> · <a href="README.tr.md">Türkçe</a></p>
 
 Looks the same on Windows and Linux (Ubuntu, Arch). A single small program, no admin rights; it goes online only when you check for updates.
-
-[![Release](https://img.shields.io/github/v/release/emrebal98/yaltri?include_prereleases)](https://github.com/emrebal98/yaltri/releases)
-[![CI](https://github.com/emrebal98/yaltri/actions/workflows/ci.yml/badge.svg)](https://github.com/emrebal98/yaltri/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+*Yaltrı-* is Old Turkic for "to shine".
 
 ---
 
@@ -104,7 +105,7 @@ for example all your games.
 - **Left click** picks the color and copies it. **Right click** or `Esc` cancels.
 - The editor that opens after a pick has your color history, lighter and darker shades and 9 formats:
   HEX, RGB, HSL, HSV, OKLCH, CMYK, HWB, Decimal, Float.
-  Star (★) a format to copy it directly on the next pick.
+  The format a pick copies is set in **Settings → Color picker**.
 
 ### Command line
 
