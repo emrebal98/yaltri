@@ -41,6 +41,14 @@ fn system_language() -> String {
         .unwrap_or_else(|| "en".into())
 }
 
+/// The color's name in the active language ("Light blue").
+pub fn color_name(color: yaltri_color::Rgb) -> &'static str {
+    match color.name_key() {
+        "" => "",
+        key => t(&format!("color.{key}")),
+    }
+}
+
 /// Code of the active language.
 #[cfg(test)]
 pub fn current() -> &'static str {
@@ -84,6 +92,14 @@ mod tests {
             let missing: Vec<_> = reference.iter().filter(|k| !table.contains_key(k.as_str())).collect();
             let extra: Vec<_> = keys.iter().filter(|k| !TABLES[0].1.contains_key(k.as_str())).collect();
             assert!(missing.is_empty() && extra.is_empty(), "{code}: missing {missing:?}, extra {extra:?}");
+        }
+    }
+
+    #[test]
+    fn every_color_name_is_translated() {
+        for key in yaltri_color::NAME_KEYS {
+            let key = format!("color.{key}");
+            assert!(TABLES[0].1.contains_key(&key), "en: missing {key}");
         }
     }
 

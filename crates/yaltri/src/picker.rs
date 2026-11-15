@@ -404,7 +404,7 @@ impl PickerOverlay {
         let color = self.color_at(cursor).unwrap_or(Rgb::new(0, 0, 0));
         let format: Format = cx.global::<Daemon>().settings.picker.copy_format.parse().unwrap_or(Format::Hex);
         let text = format.format(color);
-        let name = color.name();
+        let name = crate::i18n::color_name(color);
 
         // Size estimate for placement: 6 + swatch 44 + gap 10 + text + 14.
         let text_w = (text.chars().count() as f32 * 9.).max(name.chars().count() as f32 * 7.5);

@@ -3,6 +3,8 @@
 
 mod names;
 
+pub use names::NAME_KEYS;
+
 use std::fmt;
 use std::fs;
 use std::path::Path;
