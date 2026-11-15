@@ -166,10 +166,23 @@ mod imp {
         std::fs::write(path, content).with_context(|| format!("writing {}", path.display()))
     }
 
+    fn icon_file() -> Option<PathBuf> {
+        Some(data_home()?.join("icons/hicolor/scalable/apps/yaltri.svg"))
+    }
+
+    /// `Icon=` value: the icon file itself when installed. GNOME Shell keeps
+    /// its icon theme from login, so a theme icon added later shows up as a
+    /// generic one in the dock until the next login; a path always loads.
+    fn icon_value() -> String {
+        icon_file().filter(|p| p.exists()).map_or_else(|| "yaltri".to_owned(), |p| p.display().to_string())
+    }
+
     pub fn install_app_entry(exe: &Path, icon_svg: &str) -> Result<()> {
         let data = data_home().context("no home directory")?;
-        write_if_changed(&data.join("icons/hicolor/scalable/apps/yaltri.svg"), icon_svg.as_bytes())?;
-        write_if_changed(&data.join("applications/yaltri.desktop"), app_entry(exe).as_bytes())?;
+        // Also in the theme under its name, for programs that look it up there.
+        write_if_changed(&icon_file().context("no home directory")?, icon_svg.as_bytes())?;
+        let entry = app_entry(exe, &icon_value());
+        write_if_changed(&data.join("applications/yaltri.desktop"), entry.as_bytes())?;
         if is_enabled() {
             set_enabled(true, exe)?;
         }
@@ -177,15 +190,15 @@ mod imp {
     }
 
     /// The application entry: what launchers, docks and System Monitor read.
-    pub fn app_entry(exe: &Path) -> String {
-        format!("{}Categories=Utility;\n", entry_head(exe))
+    pub fn app_entry(exe: &Path, icon: &str) -> String {
+        format!("{}Categories=Utility;\n", entry_head(exe, icon))
     }
 
-    pub fn desktop_entry(exe: &Path) -> String {
-        format!("{}X-GNOME-Autostart-enabled=true\n", entry_head(exe))
+    pub fn desktop_entry(exe: &Path, icon: &str) -> String {
+        format!("{}X-GNOME-Autostart-enabled=true\n", entry_head(exe, icon))
     }
 
-    fn entry_head(exe: &Path) -> String {
+    fn entry_head(exe: &Path, icon: &str) -> String {
         // Desktop Entry spec: quote the program, escaping `"`, `` ` ``, `$`, `\`.
         let mut quoted = String::from("\"");
         for c in exe.display().to_string().chars() {
@@ -197,7 +210,7 @@ mod imp {
         quoted.push('"');
         // StartupWMClass ties our windows (WM_CLASS "yaltri") to this entry.
         format!(
-            "[Desktop Entry]\nType=Application\nName=Yaltri\nComment=Search and color picker in the tray\nExec={quoted}\nIcon=yaltri\nStartupWMClass=yaltri\nTerminal=false\n"
+            "[Desktop Entry]\nType=Application\nName=Yaltri\nComment=Search and color picker in the tray\nExec={quoted}\nIcon={icon}\nStartupWMClass=yaltri\nTerminal=false\n"
         )
     }
 
@@ -207,7 +220,7 @@ mod imp {
             if let Some(dir) = path.parent() {
                 std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
             }
-            std::fs::write(&path, desktop_entry(exe)).with_context(|| format!("writing {}", path.display()))?;
+            std::fs::write(&path, desktop_entry(exe, &icon_value())).with_context(|| format!("writing {}", path.display()))?;
         } else {
             match std::fs::remove_file(&path) {
                 Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
@@ -225,16 +238,16 @@ mod imp {
 
         #[test]
         fn quotes_the_binary_path() {
-            let entry = desktop_entry(Path::new("/home/a b/.local/bin/yaltri"));
+            let entry = desktop_entry(Path::new("/home/a b/.local/bin/yaltri"), "yaltri");
             assert!(entry.contains("Exec=\"/home/a b/.local/bin/yaltri\"\n"));
             assert!(entry.contains("X-GNOME-Autostart-enabled=true"));
         }
 
         #[test]
         fn app_entry_names_the_icon_and_window_class() {
-            let entry = app_entry(Path::new("/usr/bin/yaltri"));
+            let entry = app_entry(Path::new("/usr/bin/yaltri"), "/home/a/.local/share/icons/yaltri.svg");
             assert!(entry.starts_with("[Desktop Entry]\n"));
-            assert!(entry.contains("Icon=yaltri\n"));
+            assert!(entry.contains("Icon=/home/a/.local/share/icons/yaltri.svg\n"));
             assert!(entry.contains("StartupWMClass=yaltri\n"));
             assert!(!entry.contains("Autostart"));
         }
