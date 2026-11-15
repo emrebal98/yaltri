@@ -23,7 +23,7 @@ pub fn set_enabled(on: bool) -> Result<()> {
     imp::set_enabled(on, &exe)
 }
 
-/// Linux: writes `~/.local/share/applications/yaltri.desktop` and the app
+/// Linux: writes `~/.local/share/applications/<APP_ID>.desktop` and the app
 /// icon into the user's icon theme (only what changed), and refreshes an
 /// existing startup entry. Desktops find a program's icon through these.
 #[cfg(not(windows))]
@@ -183,12 +183,22 @@ mod imp {
         icon_file().filter(|p| p.exists()).map_or_else(|| "yaltri".to_owned(), |p| p.display().to_string())
     }
 
+    const LEGACY_APP_ENTRY: &str = "applications/yaltri.desktop";
+
+    /// Named after the app id, so Wayland docks and the desktop portals find
+    /// it from our windows' app id.
+    fn app_entry_file(data: &Path) -> PathBuf {
+        data.join("applications").join(format!("{}.desktop", crate::APP_ID))
+    }
+
     pub fn install_app_entry(exe: &Path, icon_svg: &str) -> Result<()> {
         let data = data_home().context("no home directory")?;
         // Also in the theme under its name, for programs that look it up there.
         write_if_changed(&icon_file().context("no home directory")?, icon_svg.as_bytes())?;
         let entry = app_entry(exe, &icon_value());
-        write_if_changed(&data.join("applications/yaltri.desktop"), entry.as_bytes())?;
+        write_if_changed(&app_entry_file(&data), entry.as_bytes())?;
+        // Named after the plain program name before the app id existed.
+        let _ = std::fs::remove_file(data.join(LEGACY_APP_ENTRY));
         if is_enabled() {
             set_enabled(true, exe)?;
         }
@@ -197,7 +207,7 @@ mod imp {
 
     pub fn remove_app_entry() -> Result<()> {
         let data = data_home().context("no home directory")?;
-        for path in [data.join("applications/yaltri.desktop"), icon_file().context("no home directory")?] {
+        for path in [app_entry_file(&data), data.join(LEGACY_APP_ENTRY), icon_file().context("no home directory")?] {
             match std::fs::remove_file(&path) {
                 Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
                     return Err(e).with_context(|| format!("removing {}", path.display()));
@@ -227,9 +237,10 @@ mod imp {
             quoted.push(c);
         }
         quoted.push('"');
-        // StartupWMClass ties our windows (WM_CLASS "yaltri") to this entry.
+        // StartupWMClass ties our windows (X11 class = app id) to this entry.
         format!(
-            "[Desktop Entry]\nType=Application\nName=Yaltri\nComment=Search and color picker in the tray\nExec={quoted}\nIcon={icon}\nStartupWMClass=yaltri\nTerminal=false\n"
+            "[Desktop Entry]\nType=Application\nName=Yaltri\nComment=Search and color picker in the tray\nExec={quoted}\nIcon={icon}\nStartupWMClass={}\nTerminal=false\n",
+            crate::APP_ID
         )
     }
 
@@ -267,7 +278,7 @@ mod imp {
             let entry = app_entry(Path::new("/usr/bin/yaltri"), "/home/a/.local/share/icons/yaltri.svg");
             assert!(entry.starts_with("[Desktop Entry]\n"));
             assert!(entry.contains("Icon=/home/a/.local/share/icons/yaltri.svg\n"));
-            assert!(entry.contains("StartupWMClass=yaltri\n"));
+            assert!(entry.contains("StartupWMClass=io.github.emrebal98.yaltri\n"));
             assert!(!entry.contains("Autostart"));
         }
     }

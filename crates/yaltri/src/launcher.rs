@@ -149,7 +149,7 @@ fn window_options(session: Session, card: f32, cx: &App) -> WindowOptions {
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
-        app_id: Some("yaltri".into()),
+        app_id: Some(yaltri_platform::APP_ID.into()),
         window_background: WindowBackgroundAppearance::Transparent,
         ..Default::default()
     }

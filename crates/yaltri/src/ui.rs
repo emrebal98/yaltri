@@ -270,7 +270,7 @@ pub fn frameless_window(title: SharedString, width: f32, height: f32, cx: &App) 
             WindowBackgroundAppearance::Transparent
         },
         is_resizable: false,
-        app_id: Some("yaltri".into()),
+        app_id: Some(yaltri_platform::APP_ID.into()),
         icon: app_icon(),
         ..Default::default()
     }

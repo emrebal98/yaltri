@@ -1,5 +1,6 @@
 //! Global shortcuts on Windows and X11. Wayland does not let clients grab
-//! keys; there the user binds `yaltri toggle <tool>` in their desktop settings.
+//! keys: GNOME gets custom shortcuts (`gnome_keys`), other desktops the
+//! global shortcuts portal (`portal_keys`).
 //!
 //! On Windows the manager must be created on the thread that runs the message
 //! loop (GPUI's main thread). Combinations Windows refuses to register

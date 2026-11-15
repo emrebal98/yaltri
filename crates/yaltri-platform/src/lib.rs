@@ -20,6 +20,8 @@ pub mod ipc;
 pub mod keygrab;
 pub mod keys;
 pub mod launch;
+#[cfg(target_os = "linux")]
+pub mod portal_keys;
 pub mod screen;
 pub mod session;
 pub mod tray;
@@ -31,3 +33,8 @@ use yaltri_core::Command;
 
 /// Cloneable, thread-safe handle every event source uses to reach the app.
 pub type CommandSender = UnboundedSender<Command>;
+
+/// Desktop app id (Linux): names the app menu entry
+/// (`<APP_ID>.desktop`), our windows' Wayland app id / X11 class, and the
+/// app towards the desktop portals, which all have to match.
+pub const APP_ID: &str = "io.github.emrebal98.yaltri";

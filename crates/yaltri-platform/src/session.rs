@@ -6,6 +6,7 @@ pub enum Session {
     /// Linux X11 session: global hotkeys and free window placement work.
     X11,
     /// Wayland compositor that implements wlr-layer-shell (KDE, Hyprland, Sway...).
+    /// Global shortcuts go through the desktop portal where it has one.
     WaylandLayerShell,
     /// GNOME on Wayland: no layer-shell, no global hotkey grabs. Run the
     /// launcher through XWayland and let the user bind `yaltri toggle launcher`.

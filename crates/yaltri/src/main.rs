@@ -38,8 +38,8 @@ komutlar:
   uninstall          yaltri'yi kaldır; ayarlar ve geçmiş için sorar
   uninstall --purge  yaltri'yi ayarları ve geçmişiyle birlikte kaldır
 
-Wayland'da global kısayolu masaüstü ayarlarından bu komutlara bağlayın,
-ör. GNOME: Ayarlar > Klavye > Özel Kısayollar > `yaltri toggle launcher`.";
+Kısayolları kendisi kuramadığı masaüstlerinde (ör. Sway) bu komutları
+masaüstünün kısayol ayarlarına bağlayın: `yaltri toggle launcher`.";
 
 fn main() -> ExitCode {
     // Must run before any thread exists (env mutation is not thread-safe).
