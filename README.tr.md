@@ -42,9 +42,9 @@ Güncellemek için tekrar çalıştır.
 <summary>Elle kurulum</summary>
 
 ```sh
-curl -LO https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-x86_64-unknown-linux-gnu.tar.gz
-tar xzf yaltri-x86_64-unknown-linux-gnu.tar.gz
-install -Dm755 yaltri-x86_64-unknown-linux-gnu/yaltri ~/.local/bin/yaltri
+curl -LO https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-linux-x86_64.tar.gz
+tar xzf yaltri-linux-x86_64.tar.gz
+install -Dm755 yaltri-linux-x86_64/yaltri ~/.local/bin/yaltri
 yaltri
 ```
 

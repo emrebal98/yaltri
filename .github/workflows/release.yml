@@ -78,25 +78,25 @@ jobs:
       - name: Build
         run: cargo build --release --locked -p yaltri --target ${{ matrix.target }}
 
-      # Version-less names keep `releases/latest/download/<asset>` links stable.
-      # Windows ships the bare executable: run it and it installs itself.
+      # Version-less names keep `releases/latest/download/<asset>` links stable:
+      # yaltri.exe (Windows) and yaltri-linux-x86_64.tar.gz (Linux). Windows
+      # ships the bare executable: run it and it installs itself. GitHub
+      # shows each file's SHA-256 (and the API returns it), so no .sha256 files.
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           Copy-Item target/${{ matrix.target }}/release/yaltri.exe yaltri.exe
-          (Get-FileHash yaltri.exe -Algorithm SHA256).Hash.ToLower() + "  yaltri.exe" | Out-File -Encoding ascii yaltri.exe.sha256
           "ASSET=yaltri.exe" >> $env:GITHUB_ENV
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
-          name="yaltri-${{ matrix.target }}"
+          name="yaltri-linux-x86_64"
           mkdir "$name"
           cp target/${{ matrix.target }}/release/yaltri README.md README.tr.md LICENSE "$name/"
           cp assets/icons/LICENSE "$name/LICENSE-lucide"
           tar czf "$name.tar.gz" "$name"
-          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
           echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
           # The one-line installer is served from the release too (copied to
           # the root so the artifact keeps every file at the top level).
@@ -108,7 +108,6 @@ jobs:
           name: ${{ matrix.target }}
           path: |
             ${{ env.ASSET }}
-            ${{ env.ASSET }}.sha256
             ${{ env.EXTRA }}
           if-no-files-found: error
 
