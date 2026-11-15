@@ -56,13 +56,11 @@ Updates install themselves: see [Updates](#updates).
 curl -fsSL https://github.com/emrebal98/yaltri/releases/latest/download/install.sh | sh
 ```
 
-The script puts Yaltri in `~/.local/bin`, starts it, and tells you the exact command if a system library is missing.
+The script puts Yaltri in `~/.local/bin` and starts it; Yaltri adds itself to the app menu and appears in the tray.
+If a system library is missing, the script tells you the exact command.
 Updates install themselves: see [Updates](#updates).
 
 On GNOME the tray icon needs the AppIndicator extension (preinstalled on Ubuntu).
-Yaltri adds itself to the app menu.
-
-Yaltri starts with your system from the first launch on; turn this off under **Settings → General → Start with system**.
 
 ---
 
@@ -74,6 +72,7 @@ Yaltri starts with your system from the first launch on; turn this off under **S
 | `Super+Shift+C` | Open the color picker |
 
 Change shortcuts in the **Settings** window (right-click the tray icon → Settings).
+Yaltri starts with your system from the first launch on; turn this off under **Settings → General → Start with system**.
 
 ### Search
 
