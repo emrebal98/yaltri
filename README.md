@@ -46,7 +46,7 @@ Each tool can be switched off in **Settings**.
 
 Download [**yaltri-windows-x86_64.exe**](https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-windows-x86_64.exe) and run it.
 That's it: Yaltri installs itself for your user (no admin rights), adds itself to the Start menu and appears in the tray.
-To update, download and run the new version the same way.
+Updates install themselves: see [Updates](#updates).
 
 > On first launch Windows may warn about an unknown publisher: **More info → Run anyway**.
 
@@ -57,7 +57,7 @@ curl -fsSL https://github.com/emrebal98/yaltri/releases/latest/download/install.
 ```
 
 The script puts Yaltri in `~/.local/bin`, starts it, and tells you the exact command if a system library is missing.
-Run it again to update.
+Updates install themselves: see [Updates](#updates).
 
 <details>
 <summary>Manual install</summary>
@@ -135,6 +135,7 @@ yaltri toggle launcher    # open / close search
 yaltri toggle picker      # open the color picker
 yaltri settings           # open settings
 yaltri quit               # quit
+yaltri update             # install a downloaded update (or check for one)
 yaltri uninstall          # uninstall (--purge: settings and history too)
 ```
 
@@ -150,6 +151,14 @@ yaltri uninstall          # uninstall (--purge: settings and history too)
   `bindsym $mod+Shift+f exec yaltri toggle launcher` (and `yaltri toggle picker`).
 
 ---
+
+## Updates
+
+Yaltri checks for a new version once a day and downloads it in the background. When it is ready,
+**Restart to update** appears in the tray menu and under **Settings → About**; click it and Yaltri updates
+and starts again in a few seconds. Turn the daily check off under **Settings → General**; the button in
+Settings → About still checks on demand. On Linux this works for the copy `install.sh` installed; a copy
+from a package manager is updated by it.
 
 ## Settings and files
 

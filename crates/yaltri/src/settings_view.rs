@@ -12,7 +12,7 @@ use gpui_kit::{
 };
 use yaltri_apps::games::Launcher;
 use yaltri_color::Format;
-use yaltri_core::{Settings, ToolId};
+use yaltri_core::{Command, Settings, ToolId};
 use yaltri_files::Phase;
 use yaltri_platform::hotkeys::{self, HotkeyErrorKind};
 use yaltri_platform::keys;
@@ -105,7 +105,6 @@ pub struct SettingsView {
     warning: Option<SharedString>,
     /// (`is_error`, text).
     toast: Option<(bool, SharedString)>,
-    update: UpdateState,
     scroll: ScrollHandle,
     /// Section to bring to the top on the next render.
     scroll_to: Option<ToolId>,
@@ -156,7 +155,6 @@ impl SettingsView {
             theme: ThemeChoice::from_key(&settings.general.theme),
             warning,
             toast: None,
-            update: UpdateState::Idle,
             _toast_timer: None,
             scroll: ScrollHandle::new(),
             scroll_to: None,
@@ -285,28 +283,18 @@ impl SettingsView {
         self.save(cx);
     }
 
-    fn check_updates(&mut self, cx: &mut Context<Self>) {
-        if self.update == UpdateState::Checking {
-            return;
+    /// Turns the daily update check on or off; on also checks right away.
+    fn set_check_updates(&mut self, on: bool, cx: &mut Context<Self>) {
+        let daemon = cx.global_mut::<Daemon>();
+        let mut settings = daemon.settings.clone();
+        settings.general.check_updates = on;
+        if let Err(e) = daemon.update_settings(settings) {
+            tracing::warn!("saving check_updates failed: {e:#}");
         }
-        self.update = UpdateState::Checking;
+        if on {
+            crate::daemon::check_update(cx);
+        }
         cx.notify();
-        let task = cx.background_executor().spawn(async { update::check() });
-        cx.spawn(async move |this, cx| {
-            let state = match task.await {
-                Ok(None) => UpdateState::UpToDate,
-                Ok(Some(v)) => UpdateState::Available(v),
-                Err(e) => {
-                    tracing::warn!("update check failed: {e:#}");
-                    UpdateState::Failed
-                }
-            };
-            let _ = this.update(cx, |this, cx| {
-                this.update = state;
-                cx.notify();
-            });
-        })
-        .detach();
     }
 
     /// The message under a tool's shortcut field, if any.
@@ -606,6 +594,7 @@ impl SettingsView {
     fn general_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
         // Each language in its own name; "auto" follows the OS locale.
         let autostart = self.autostart;
+        let check_updates = cx.global::<Daemon>().settings.general.check_updates;
         let languages: [(&str, &str); 3] =
             [("auto", t("settings.general.language.system")), ("tr", "Türkçe"), ("en", "English")];
         let current = languages.iter().find(|(key, _)| *key == self.language).map_or(languages[0].1, |(_, name)| *name);
@@ -704,6 +693,12 @@ impl SettingsView {
                     .when_some(self.autostart_error.clone(), |d, e| {
                         d.child(div().pb(px(12.)).ts(12., 16.).text_color(p.danger).child(e))
                     }),
+            )
+            .child(
+                setting_row(56., false, t("settings.general.check_updates"), Some(t("settings.general.check_updates_hint")), p)
+                    .child(ui::switch("check-updates", check_updates, p).on_click(cx.listener(move |this, _, _, cx| {
+                        this.set_check_updates(!check_updates, cx)
+                    }))),
             )
             .child(
                 setting_row(56., false, t("settings.general.language"), Some(t("settings.general.language_hint")), p)
@@ -815,11 +810,14 @@ impl SettingsView {
         let config_path = cx.global::<Daemon>().paths.settings_file();
         let config_dir = config_path.parent().map(|d| d.to_path_buf());
         let mut version = tf("settings.about.version", &[("version", update::VERSION)]);
-        let status = match &self.update {
+        let state = cx.global::<Daemon>().update.clone();
+        let status = match &state {
             UpdateState::Idle => None,
             UpdateState::Checking => Some(t("settings.about.checking").to_owned()),
             UpdateState::UpToDate => Some(t("settings.about.up_to_date").to_owned()),
-            UpdateState::Available(v) => Some(tf("settings.about.available", &[("version", v)])),
+            UpdateState::Available(r) => Some(tf("settings.about.available", &[("version", &r.version)])),
+            UpdateState::Downloading(r) => Some(tf("settings.about.downloading", &[("version", &r.version)])),
+            UpdateState::Ready { release, .. } => Some(tf("settings.about.ready", &[("version", &release.version)])),
             UpdateState::Failed => Some(t("settings.about.check_failed").to_owned()),
         };
         if let Some(status) = status {
@@ -843,18 +841,23 @@ impl SettingsView {
                 })
         };
 
-        let update_button = if matches!(self.update, UpdateState::Available(_)) {
-            ui::button("update", ButtonKind::Primary, p)
+        let update_button = match state {
+            UpdateState::Ready { .. } => ui::button("update", ButtonKind::Primary, p)
+                .child(ui::icon("download", 14., p.accent_fg))
+                .child(t("settings.about.restart"))
+                .on_click(|_, _, cx| {
+                    let _ = cx.global::<Daemon>().tx.unbounded_send(Command::Update);
+                }),
+            UpdateState::Available(_) => ui::button("update", ButtonKind::Primary, p)
                 .child(ui::icon("download", 14., p.accent_fg))
                 .child(t("settings.about.download"))
                 .on_click(|_, _, _| {
                     let _ = open::that_detached(update::RELEASES_URL);
-                })
-        } else {
-            ui::button("update", ButtonKind::Secondary, p)
+                }),
+            _ => ui::button("update", ButtonKind::Secondary, p)
                 .child(ui::icon("refresh-cw", 14., p.foreground))
                 .child(t("settings.about.check"))
-                .on_click(cx.listener(|this, _, _, cx| this.check_updates(cx)))
+                .on_click(|_, _, cx| crate::daemon::check_update(cx)),
         };
 
         let body = div()

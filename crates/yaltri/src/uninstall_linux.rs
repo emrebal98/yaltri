@@ -40,7 +40,7 @@ pub fn uninstall(purge: bool) -> Result<()> {
     }
 
     let exe = std::env::current_exe().context("locating the yaltri executable")?;
-    if bin_dir().is_some_and(|dir| installed_by_script(&exe, &dir)) {
+    if is_installer_copy(&exe) {
         // A running program may delete its own file on Linux.
         std::fs::remove_file(&exe).with_context(|| format!("removing {}", exe.display()))?;
     } else {
@@ -56,6 +56,12 @@ fn bin_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/bin")))
+}
+
+/// Whether `exe` is the copy `install.sh` put in place (which Yaltri may
+/// replace or remove itself).
+pub(crate) fn is_installer_copy(exe: &Path) -> bool {
+    bin_dir().is_some_and(|dir| installed_by_script(exe, &dir))
 }
 
 fn installed_by_script(exe: &Path, bin_dir: &Path) -> bool {

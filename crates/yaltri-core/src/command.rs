@@ -15,6 +15,8 @@ pub enum Command {
     Settings,
     /// Exit the daemon.
     Quit,
+    /// Install a downloaded update and restart (or check for one first).
+    Update,
 }
 
 impl fmt::Display for Command {
@@ -23,6 +25,7 @@ impl fmt::Display for Command {
             Command::Toggle(tool) => write!(f, "toggle {tool}"),
             Command::Settings => f.write_str("settings"),
             Command::Quit => f.write_str("quit"),
+            Command::Update => f.write_str("update"),
         }
     }
 }
@@ -30,7 +33,7 @@ impl fmt::Display for Command {
 impl FromStr for Command {
     type Err = String;
 
-    /// Parses the wire / CLI form: `toggle <tool>`, `settings`, `quit`.
+    /// Parses the wire / CLI form: `toggle <tool>`, `settings`, `quit`, `update`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split_whitespace();
         let verb = parts.next().ok_or("empty command")?;
@@ -41,6 +44,7 @@ impl FromStr for Command {
             }
             "settings" => Command::Settings,
             "quit" => Command::Quit,
+            "update" => Command::Update,
             other => return Err(format!("unknown command: {other}")),
         };
         if parts.next().is_some() {
@@ -82,6 +86,7 @@ mod tests {
             Command::Toggle(ToolId::Picker),
             Command::Settings,
             Command::Quit,
+            Command::Update,
         ] {
             assert_eq!(cmd.to_string().parse::<Command>().unwrap(), cmd);
         }

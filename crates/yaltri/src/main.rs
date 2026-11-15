@@ -35,6 +35,7 @@ komutlar:
   toggle picker      renk seçiciyi aç/kapat
   settings           ayarlar penceresini aç
   quit               çalışan yaltri'yi kapat
+  update             indirilen güncellemeyi kur ve yeniden başlat (yoksa denetle)
   uninstall          yaltri'yi kaldır; ayarlar ve geçmiş için sorar
   uninstall --purge  yaltri'yi ayarları ve geçmişiyle birlikte kaldır
 

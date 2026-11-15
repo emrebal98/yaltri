@@ -29,6 +29,8 @@ pub struct GeneralSettings {
     pub language: String,
     /// "system" (follow the OS light/dark setting), "dark" or "light".
     pub theme: String,
+    /// Look for a new release once a day and download it in the background.
+    pub check_updates: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -109,7 +111,7 @@ impl Default for Settings {
 
 impl Default for GeneralSettings {
     fn default() -> Self {
-        Self { start_with_system: true, language: "auto".into(), theme: "system".into() }
+        Self { start_with_system: true, language: "auto".into(), theme: "system".into(), check_updates: true }
     }
 }
 
