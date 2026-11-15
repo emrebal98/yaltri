@@ -29,8 +29,6 @@ Windows ve Linux'ta (Ubuntu, Arch) aynı görünür. Tek dosyadır, kurulum gere
 
 > İlk açılışta Windows "bilinmeyen yayıncı" uyarısı gösterebilir: **Ek bilgi → Yine de çalıştır**.
 
-Bilgisayar açılınca başlasın istersen: `Win+R` → `shell:startup` → açılan klasöre `yaltri.exe` kısayolu koy.
-
 ### Linux
 
 ```sh
@@ -48,14 +46,9 @@ sudo pacman -S libxkbcommon-x11 vulkan-icd-loader                    # Arch
 ```
 
 GNOME'da tepsi ikonu için AppIndicator eklentisi gerekir (Ubuntu'da hazır gelir).
+Yaltri kendini uygulama menüsüne ekler.
 
-Oturum açılınca başlasın istersen:
-
-```sh
-mkdir -p ~/.config/autostart
-printf '[Desktop Entry]\nType=Application\nName=Yaltri\nExec=%s\n' "$HOME/.local/bin/yaltri" \
-  > ~/.config/autostart/yaltri.desktop
-```
+Yaltri ilk açılıştan itibaren sistemle birlikte başlar; **Ayarlar → Genel → Sistem açılışında başlat**'tan kapatabilirsin.
 
 ---
 
@@ -85,6 +78,8 @@ Yazarken filtrelemek için başa kısaltma ve boşluk yaz: `/u ` uygulama, `/d `
 - **Uygulamalar:** Başlat menüsündeki ve mağazadan kurulan uygulamalar, Linux'ta kurulu masaüstü uygulamaları.
 - **Dosyalar:** Yaltri bilgisayarındaki dosya adlarını kendi index'inde tutar, milyonlarca dosyada bile anında bulur.
   İlk tarama birkaç dakika sürebilir, sonra değişiklikleri kendisi takip eder.
+  Linux'ta çok fazla klasör içeren ev klasörleri canlı izlenmez, saatte bir yeniden taranır;
+  böylece Yaltri diğer programların da ihtiyaç duyduğu sistem dosya izleme limitini tüketmez.
 - **Oyunlar:** Steam, Xbox / PC Game Pass, Epic Games, Riot Games, GOG, Ubisoft Connect, EA app;
   Linux'ta Steam, Heroic ve Lutris. Oyunlar kendi launcher'ları üzerinden açılır.
 - **Hesap:** Matematik, birim çevirme ve sabitler. Sık kullandıkların listede üste çıkar.
@@ -108,14 +103,15 @@ yaltri settings           # ayarları aç
 yaltri quit               # kapat
 ```
 
-### Wayland
+### Linux'ta kısayollar
 
-Wayland, uygulamaların kendi kısayolunu tanımlamasına izin vermez. Kısayolu masaüstü ayarlarından ekle,
-komut olarak `yaltri toggle launcher` yaz:
-
-- **GNOME:** Ayarlar → Klavye → Klavye Kısayolları → Özel Kısayollar
-- **KDE:** Sistem Ayarları → Kısayollar → Özel Kısayollar
-- **Hyprland:** `bind = SUPER, SPACE, exec, yaltri toggle launcher`
+- **GNOME (X11 ve Wayland):** Yaltri kısayollarını GNOME'un özel kısayollarına kendisi ekler ve Ayarlar'la
+  senkron tutar. GNOME aynı tuşları zaten kullanıyorsa (örneğin `Super+Space` klavye dilini değiştirir),
+  Yaltri çalıştığı sürece onları devralır; kısayolu değiştirince veya çıkınca geri verir.
+- **Diğer Wayland masaüstleri** uygulamaların global kısayol tanımlamasına izin vermez. Kısayolu masaüstü
+  ayarlarından ekle, komut olarak `yaltri toggle launcher` (veya `yaltri toggle picker`) yaz:
+  - **KDE:** Sistem Ayarları → Kısayollar → Özel Kısayollar
+  - **Hyprland:** `bind = SUPER SHIFT, F, exec, yaltri toggle launcher`
 
 ---
 
@@ -126,7 +122,9 @@ komut olarak `yaltri toggle launcher` yaz:
 | Ayarlar | `%APPDATA%\yaltri\config\settings.toml` | `~/.config/yaltri/settings.toml` |
 | Index, geçmiş, loglar | `%LOCALAPPDATA%\yaltri\data` | `~/.local/share/yaltri` |
 
-**Kaldırmak için:** tepsi menüsünden **Çıkış**, sonra `yaltri` dosyasını ve bu iki klasörü sil.
+**Kaldırmak için:** Ayarlar'da **Sistem açılışında başlat**'ı kapat, tepsi menüsünden **Çıkış**'a bas, sonra
+`yaltri` dosyasını ve bu iki klasörü sil. Linux'ta ayrıca `~/.local/share/applications/yaltri.desktop` ve
+`~/.local/share/icons/hicolor/scalable/apps/yaltri.svg` dosyalarını da sil.
 
 ---
 
