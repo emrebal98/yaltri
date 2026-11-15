@@ -24,9 +24,9 @@ Looks the same on Windows and Linux (Ubuntu, Arch). A single small program, no a
 
 ### Windows
 
-Download [**yaltri.exe**](https://github.com/emrebal98/yaltri/releases/latest/download/yaltri.exe) and run it.
+Download [**yaltri-windows-x86_64.exe**](https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-windows-x86_64.exe) and run it.
 That's it: Yaltri installs itself for your user (no admin rights), adds itself to the Start menu and appears in the tray.
-To update, download and run the new `yaltri.exe` the same way.
+To update, download and run the new version the same way.
 
 > On first launch Windows may warn about an unknown publisher: **More info → Run anyway**.
 
@@ -43,9 +43,9 @@ Run it again to update.
 <summary>Manual install</summary>
 
 ```sh
-curl -LO https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-x86_64-unknown-linux-gnu.tar.gz
-tar xzf yaltri-x86_64-unknown-linux-gnu.tar.gz
-install -Dm755 yaltri-x86_64-unknown-linux-gnu/yaltri ~/.local/bin/yaltri
+curl -LO https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-linux-x86_64.tar.gz
+tar xzf yaltri-linux-x86_64.tar.gz
+install -Dm755 yaltri-linux-x86_64/yaltri ~/.local/bin/yaltri
 yaltri
 ```
 

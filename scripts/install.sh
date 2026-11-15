@@ -8,14 +8,25 @@
 set -eu
 
 repo="emrebal98/yaltri"
-asset="yaltri-x86_64-unknown-linux-gnu"
+asset="yaltri-linux-x86_64"
 bin_dir="${XDG_BIN_HOME:-$HOME/.local/bin}"
 bin="$bin_dir/yaltri"
 
 say() { printf '%s\n' "$*"; }
 fail() { say "yaltri: $*" >&2; exit 1; }
 
-[ "$(uname -s)" = "Linux" ] || fail "this installer is for Linux; on Windows download yaltri.exe from https://github.com/$repo/releases/latest"
+# Tiny readers for GitHub's release JSON (no jq needed). Every key goes on
+# its own line first, so minified and pretty-printed responses both work.
+json_lines() { sed 's/,[[:space:]]*"/,\n"/g; s/{[[:space:]]*"/{\n"/g' | sed 's/^[[:space:]]*//; s/"[[:space:]]*:[[:space:]]*/":/'; }
+release_tag() { json_lines | grep -m1 '^"tag_name":' | sed 's/^"tag_name":"\([^"]*\)".*/\1/'; }
+asset_digest() {
+  json_lines | awk -v want="\"name\":\"$1\"" '
+    index($0, want) == 1 { found = 1; next }
+    found && /^"digest":/ { sub(/^"digest":"/, ""); sub(/".*/, ""); print; exit }
+    found && /^"name":/ { exit }'
+}
+
+[ "$(uname -s)" = "Linux" ] || fail "this installer is for Linux; on Windows download yaltri-windows-x86_64.exe from https://github.com/$repo/releases/latest"
 case "$(uname -m)" in
   x86_64 | amd64) ;;
   *) fail "no build for $(uname -m) yet (only x86_64)" ;;
@@ -26,15 +37,42 @@ command -v tar >/dev/null 2>&1 || fail "tar is required"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
-say "Downloading Yaltri…"
-curl -fsSL "https://github.com/$repo/releases/latest/download/$asset.tar.gz" -o "$tmp/yaltri.tar.gz" \
-  || fail "download failed"
-if command -v sha256sum >/dev/null 2>&1 \
-  && curl -fsSL "https://github.com/$repo/releases/latest/download/$asset.tar.gz.sha256" -o "$tmp/sum" 2>/dev/null; then
-  expected=$(cut -d' ' -f1 "$tmp/sum")
-  actual=$(sha256sum "$tmp/yaltri.tar.gz" | cut -d' ' -f1)
-  [ "$expected" = "$actual" ] || fail "checksum mismatch, download is damaged"
+# The release's tag and the file's SHA-256 come from GitHub's API. Without it
+# (offline mirror, firewall, rate limit) the latest file is used unchecked.
+tag="" digest=""
+if curl -fsSL -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/$repo/releases/latest" -o "$tmp/release.json" 2>/dev/null; then
+  tag=$(release_tag < "$tmp/release.json" || true)
+  digest=$(asset_digest "$asset.tar.gz" < "$tmp/release.json" || true)
 fi
+if [ -n "$tag" ]; then
+  # Download from the same release the digest belongs to.
+  url="https://github.com/$repo/releases/download/$tag/$asset.tar.gz"
+  say "Downloading Yaltri $tag…"
+else
+  url="https://github.com/$repo/releases/latest/download/$asset.tar.gz"
+  say "Downloading Yaltri…"
+fi
+curl -fsSL "$url" -o "$tmp/yaltri.tar.gz" || fail "download failed"
+
+case "$digest" in
+  sha256:*)
+    actual=""
+    if command -v sha256sum >/dev/null 2>&1; then
+      actual=$(sha256sum "$tmp/yaltri.tar.gz" | cut -d' ' -f1)
+    elif command -v shasum >/dev/null 2>&1; then
+      actual=$(shasum -a 256 "$tmp/yaltri.tar.gz" | cut -d' ' -f1)
+    fi
+    if [ -z "$actual" ]; then
+      say "(no sha256sum here; skipping the checksum)"
+    elif [ "$actual" != "${digest#sha256:}" ]; then
+      fail "checksum mismatch, the download is damaged; try again"
+    else
+      say "Checksum OK"
+    fi
+    ;;
+  *) say "(could not get the checksum from GitHub; skipping it)" ;;
+esac
 tar xzf "$tmp/yaltri.tar.gz" -C "$tmp"
 
 # An update replaces the running binary: ask the old one to quit first.

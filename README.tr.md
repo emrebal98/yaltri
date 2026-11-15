@@ -24,9 +24,9 @@ Windows ve Linux'ta (Ubuntu, Arch) aynı görünür. Tek küçük bir programdı
 
 ### Windows
 
-[**yaltri.exe**](https://github.com/emrebal98/yaltri/releases/latest/download/yaltri.exe) dosyasını indir ve çalıştır.
+[**yaltri-windows-x86_64.exe**](https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-windows-x86_64.exe) dosyasını indir ve çalıştır.
 Bu kadar: Yaltri kendini kullanıcın için kurar (yönetici izni gerekmez), Başlat menüsüne eklenir ve tepside belirir.
-Güncellemek için yeni `yaltri.exe`'yi aynı şekilde indirip çalıştır.
+Güncellemek için yeni sürümü aynı şekilde indirip çalıştır.
 
 > İlk açılışta Windows "bilinmeyen yayıncı" uyarısı gösterebilir: **Ek bilgi → Yine de çalıştır**.
 
@@ -43,9 +43,9 @@ Güncellemek için tekrar çalıştır.
 <summary>Elle kurulum</summary>
 
 ```sh
-curl -LO https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-x86_64-unknown-linux-gnu.tar.gz
-tar xzf yaltri-x86_64-unknown-linux-gnu.tar.gz
-install -Dm755 yaltri-x86_64-unknown-linux-gnu/yaltri ~/.local/bin/yaltri
+curl -LO https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-linux-x86_64.tar.gz
+tar xzf yaltri-linux-x86_64.tar.gz
+install -Dm755 yaltri-linux-x86_64/yaltri ~/.local/bin/yaltri
 yaltri
 ```
 
