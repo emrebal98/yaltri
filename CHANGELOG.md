@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0](https://github.com/emrebal98/yaltri/compare/v0.1.0...v0.2.0) (2026-11-15)
+
+
+### Features
+
+* **install:** install itself on windows and add a linux install script ([#11](https://github.com/emrebal98/yaltri/issues/11)) ([51874ae](https://github.com/emrebal98/yaltri/commit/51874ae3f37f88ec1f78cd1c6544b1fef29fe866))
+* **shortcuts:** global shortcuts on kde, hyprland and other wayland desktops ([#19](https://github.com/emrebal98/yaltri/issues/19)) ([f4539eb](https://github.com/emrebal98/yaltri/commit/f4539eb9150643c0589e407ff087e642accb5adc))
+* **uninstall:** uninstall on linux too, with an optional --purge ([#18](https://github.com/emrebal98/yaltri/issues/18)) ([5cebed0](https://github.com/emrebal98/yaltri/commit/5cebed0b04d92aa56eeca9770a88fa3c6d9d3732))
+
+
+### Bug Fixes
+
+* **picker:** name colors in the ui language ([#13](https://github.com/emrebal98/yaltri/issues/13)) ([4b3a9e2](https://github.com/emrebal98/yaltri/commit/4b3a9e28116d95f647ec0c5a402ec855ae62f2f3))
+
 ## 0.1.0 (2026-11-15)
 
 
