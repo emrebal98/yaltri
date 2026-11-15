@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://github.com/emrebal98/yaltri/releases"><img src="https://img.shields.io/github/v/release/emrebal98/yaltri?include_prereleases" alt="Release"></a>
   <a href="https://github.com/emrebal98/yaltri/actions/workflows/ci.yml"><img src="https://github.com/emrebal98/yaltri/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License: GPL-3.0"></a>
 </p>
 
 <p align="center"><b>English</b> · <a href="README.tr.md">Türkçe</a></p>
@@ -175,4 +175,10 @@ Setup, common commands, project layout, commit conventions and releases are in [
 
 ## License
 
-[MIT](LICENSE). Icons from [Lucide](https://lucide.dev) ([ISC](assets/icons/LICENSE)).
+Copyright (C) 2026 Yaltri contributors.
+
+Yaltri is free software: you can use, study, share and change it under the terms of the
+[GNU General Public License v3.0 or later](LICENSE). If you distribute a modified version, or a program
+built from Yaltri's code, you must share its source under the same license.
+
+Icons from [Lucide](https://lucide.dev) ([ISC](assets/icons/LICENSE)).
