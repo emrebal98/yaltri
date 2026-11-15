@@ -20,6 +20,26 @@ Windows ve Linux'ta (Ubuntu, Arch) aynı görünür. Tek küçük bir programdı
 
 ---
 
+## Araçlar
+
+### 🔎 Arama · `Super+Shift+F`
+
+Uygulamalar, dosyalar ve oyunlar tek kutuda; içinde hesap makinesi de var: `2^10`, `5 km to mi`, `=pi`.
+Yazdıkça sonuçlar gelir; `Enter` sonucu açar ya da cevabı kopyalar.
+
+<p align="center"><img src="docs/media/launcher.gif" width="680" alt="Yaltri arama kutusu: 2^10 sonucu 1024, /a note ise Notepad, Sticky Notes ve OneNote'u listeler"></p>
+
+### 🎨 Renk seçici · `Super+Shift+C`
+
+Ekranın herhangi bir yerinden renk al, tam pikseli tutturmak için fare tekerleğiyle yakınlaş,
+HEX, RGB, HSL, OKLCH ya da beş başka formatta kopyala.
+
+<p align="center"><img src="docs/media/color-picker.gif" width="720" alt="Renk seçme: kod ve ad imleci izler, fare tekerleği bir köşede büyüteci açar, tıklayınca editör dokuz formatı ve geçmişi gösterir"></p>
+
+Her araç **Ayarlar**'dan kapatılabilir.
+
+---
+
 ## Kurulum
 
 ### Windows
