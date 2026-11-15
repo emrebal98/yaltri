@@ -56,32 +56,11 @@ Güncellemeler kendiliğinden kurulur: [Güncellemeler](#güncellemeler) bölüm
 curl -fsSL https://github.com/emrebal98/yaltri/releases/latest/download/install.sh | sh
 ```
 
-Script Yaltri'yi `~/.local/bin` içine koyar, başlatır ve eksik bir sistem kütüphanesi varsa kurulum komutunu söyler.
+Script Yaltri'yi `~/.local/bin` içine koyar ve başlatır; Yaltri kendini uygulama menüsüne ekler ve tepside belirir.
+Eksik bir sistem kütüphanesi varsa script kurulum komutunu söyler.
 Güncellemeler kendiliğinden kurulur: [Güncellemeler](#güncellemeler) bölümüne bak.
 
-<details>
-<summary>Elle kurulum</summary>
-
-```sh
-curl -LO https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-linux-x86_64.tar.gz
-tar xzf yaltri-linux-x86_64.tar.gz
-install -Dm755 yaltri-linux-x86_64/yaltri ~/.local/bin/yaltri
-yaltri
-```
-
-</details>
-
-Eksik kütüphane hatası alırsan:
-
-```sh
-sudo apt install libxkbcommon-x11-0 libvulkan1 mesa-vulkan-drivers   # Ubuntu
-sudo pacman -S libxkbcommon-x11 vulkan-icd-loader                    # Arch
-```
-
 GNOME'da tepsi ikonu için AppIndicator eklentisi gerekir (Ubuntu'da hazır gelir).
-Yaltri kendini uygulama menüsüne ekler.
-
-Yaltri ilk açılıştan itibaren sistemle birlikte başlar; **Ayarlar → Genel → Sistem açılışında başlat**'tan kapatabilirsin.
 
 ---
 
@@ -93,6 +72,7 @@ Yaltri ilk açılıştan itibaren sistemle birlikte başlar; **Ayarlar → Genel
 | `Super+Shift+C` | Renk seçiciyi açar |
 
 Kısayolları **Ayarlar** penceresinden değiştirebilirsin (tepsi ikonuna sağ tık → Ayarlar).
+Yaltri ilk açılıştan itibaren sistemle birlikte başlar; **Ayarlar → Genel → Sistem açılışında başlat**'tan kapatabilirsin.
 
 ### Arama
 
