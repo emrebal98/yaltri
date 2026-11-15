@@ -8,6 +8,8 @@ pub mod hookkeys;
 pub mod powertoys;
 pub mod autostart;
 #[cfg(target_os = "linux")]
+pub mod desktop_font;
+#[cfg(target_os = "linux")]
 pub mod gnome_keys;
 pub mod hotkeys;
 pub mod icon;

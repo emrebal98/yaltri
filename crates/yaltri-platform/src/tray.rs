@@ -279,23 +279,9 @@ mod imp {
         text.chars().map(|c| face.glyph_index(c).and_then(|g| face.glyph_hor_advance(g)).map(f32::from)).sum()
     }
 
-    /// The font file behind GNOME's interface font (`'Ubuntu 11'`).
-    fn shell_font() -> Option<Vec<u8>> {
-        let run = |cmd: &str, args: &[&str]| {
-            let out = std::process::Command::new(cmd).args(args).output().ok()?;
-            out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
-        };
-        let name = run("gsettings", &["get", "org.gnome.desktop.interface", "font-name"])?;
-        let name = name.trim_matches('\'');
-        // Drop the trailing size.
-        let family = name.rsplit_once(' ').filter(|(_, size)| size.parse::<f32>().is_ok()).map_or(name, |(f, _)| f);
-        let file = run("fc-match", &["-f", "%{file}", family])?;
-        std::fs::read(file).ok()
-    }
-
     impl Tray {
         pub fn spawn(tx: CommandSender, menu: Vec<Option<MenuEntry>>) -> Result<Self> {
-            let font = if is_gnome() { shell_font() } else { None };
+            let font = if is_gnome() { crate::desktop_font::file() } else { None };
             let handle =
                 SniTray { tx, menu, font }.spawn().context("starting tray (GNOME needs the AppIndicator extension)")?;
             Ok(Self { handle })

@@ -17,10 +17,23 @@ pub const R_LG: f32 = 12.;
 /// Our own window frame (Linux client decorations).
 pub const R_WINDOW: f32 = 10.;
 
-/// The system UI font. Windows 11 ships Segoe UI Variable; GNOME uses
-/// Cantarell, Ubuntu its own font, and fontconfig falls back from there.
+/// The system UI font. Windows 11 ships Segoe UI Variable; on Linux the
+/// desktop's interface font (Ubuntu on Ubuntu, Cantarell on GNOME), read
+/// once, with Cantarell when the desktop does not say.
 pub fn ui_font() -> SharedString {
-    if cfg!(windows) { "Segoe UI Variable Text".into() } else { "Cantarell".into() }
+    #[cfg(windows)]
+    return "Segoe UI Variable Text".into();
+    #[cfg(not(windows))]
+    {
+        static FONT: LazyLock<SharedString> = LazyLock::new(|| {
+            #[cfg(target_os = "linux")]
+            if let Some(family) = yaltri_platform::desktop_font::family() {
+                return family.into();
+            }
+            "Cantarell".into()
+        });
+        FONT.clone()
+    }
 }
 
 /// Monospace for color values and paths.
