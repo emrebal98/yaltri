@@ -63,7 +63,7 @@ printf '[Desktop Entry]\nType=Application\nName=Yaltri\nExec=%s\n' "$HOME/.local
 
 | Kısayol | Ne yapar |
 |---|---|
-| `Super+Space` | Arama kutusunu açar |
+| `Super+Shift+F` | Arama kutusunu açar |
 | `Super+Shift+C` | Renk seçiciyi açar |
 
 Kısayolları **Ayarlar** penceresinden değiştirebilirsin (tepsi ikonuna sağ tık → Ayarlar).

@@ -33,6 +33,15 @@ pub fn svg_rgba(svg: &str, size: u32, color: Option<&str>) -> Option<Vec<u8>> {
     )
 }
 
+/// PNG of `svg_rgba`, for D-Bus menus that take encoded images.
+#[cfg(target_os = "linux")]
+pub fn svg_png(svg: &str, size: u32, color: Option<&str>) -> Option<Vec<u8>> {
+    let image = image::RgbaImage::from_raw(size, size, svg_rgba(svg, size, color)?)?;
+    let mut png = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut png, image::ImageFormat::Png).ok()?;
+    Some(png.into_inner())
+}
+
 /// The tray mark at `size` px for a light or dark taskbar.
 pub fn tray_rgba(size: u32, light_taskbar: bool) -> Vec<u8> {
     let svg = match (size <= 20, light_taskbar) {

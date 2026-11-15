@@ -78,7 +78,8 @@ pub fn round_popup(hwnd: isize, border: u32) {
 }
 
 /// How many "lines" one mouse-wheel notch scrolls, as GPUI reports wheel
-/// deltas in lines: the Windows setting (default 3); one on Linux.
+/// deltas in lines: the Windows setting (default 3); on Linux GPUI's fixed
+/// `SCROLL_LINES` (3 per notch on both X11 and Wayland).
 pub fn wheel_lines_per_notch() -> f32 {
     #[cfg(windows)]
     {
@@ -91,7 +92,7 @@ pub fn wheel_lines_per_notch() -> f32 {
     }
     #[cfg(not(windows))]
     {
-        1.
+        3.
     }
 }
 

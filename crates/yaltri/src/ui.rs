@@ -29,6 +29,62 @@ pub fn frame_popup(window: &gpui_kit::Window, p: &Palette) {
     let _ = (window, p);
 }
 
+/// The X11 window id behind `window`; `None` on Wayland and Windows.
+#[cfg(target_os = "linux")]
+pub fn x11_window(window: &gpui_kit::Window) -> Option<u32> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    match HasWindowHandle::window_handle(window).ok()?.as_raw() {
+        RawWindowHandle::Xlib(h) => u32::try_from(h.window).ok(),
+        RawWindowHandle::Xcb(h) => Some(h.window.get()),
+        _ => None,
+    }
+}
+
+/// X11: gives a popup keyboard focus. GPUI maps popups override-redirect,
+/// which the window manager never focuses. No-op elsewhere.
+pub fn focus_popup(window: &gpui_kit::Window) {
+    #[cfg(target_os = "linux")]
+    if let Some(xid) = x11_window(window) {
+        yaltri_platform::x11::focus_window(xid);
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = window;
+}
+
+/// X11: clips the window to our rounded frame (`radius` logical px), so the
+/// corners stay see-through when the GPU driver cannot draw transparency
+/// (NVIDIA). Cheap to call every frame: reshapes only when the size changes.
+/// No-op elsewhere.
+pub fn round_corners(window: &gpui_kit::Window, radius: f32) {
+    #[cfg(target_os = "linux")]
+    if let Some(xid) = x11_window(window) {
+        use std::cell::RefCell;
+        use std::collections::HashMap;
+        thread_local! {
+            static SHAPED: RefCell<HashMap<u32, (u16, u16, u16)>> = RefCell::default();
+        }
+        let scale = window.scale_factor();
+        let size = window.bounds().size;
+        let physical = |v: f32| (v * scale).round() as u16;
+        let shape = (physical(size.width.as_f32()), physical(size.height.as_f32()), physical(radius));
+        if SHAPED.with_borrow(|m| m.get(&xid) == Some(&shape)) {
+            return;
+        }
+        match yaltri_platform::x11::round_window(xid, shape.0, shape.1, shape.2) {
+            Ok(()) => SHAPED.with_borrow_mut(|m| _ = m.insert(xid, shape)),
+            Err(e) => tracing::warn!("rounding window corners failed: {e:#}"),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (window, radius);
+}
+
+/// Radius for whatever touches a corner of a tool window's frame (inside its
+/// 1 px border). GPUI clips children to a rectangle, not to rounded corners,
+/// so every element that paints a background into a corner must round that
+/// corner itself or it shows as a square nub. Windows: the system frame.
+pub const FRAME_INNER_RADIUS: f32 = if cfg!(windows) { 0. } else { theme::R_WINDOW - 1. };
+
 /// Height of our titlebar.
 pub const TITLEBAR_HEIGHT: f32 = 40.;
 
@@ -205,8 +261,9 @@ pub fn frameless_window(title: SharedString, width: f32, height: f32, cx: &App) 
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(width), px(height)), cx))),
         titlebar: Some(TitlebarOptions { title: Some(title), appears_transparent: true, traffic_light_position: None }),
         window_decorations: Some(WindowDecorations::Client),
-        // Linux draws our own rounded frame on a transparent window; Windows
-        // keeps the system frame (rounded corners, shadow, snap).
+        // Linux: the component library draws the rounded frame and shadow on
+        // a transparent window; Windows keeps the system frame (rounded
+        // corners, shadow, snap).
         window_background: if cfg!(windows) {
             WindowBackgroundAppearance::Opaque
         } else {
@@ -214,8 +271,19 @@ pub fn frameless_window(title: SharedString, width: f32, height: f32, cx: &App) 
         },
         is_resizable: false,
         app_id: Some("yaltri".into()),
+        icon: app_icon(),
         ..Default::default()
     }
+}
+
+/// Taskbar / dock icon (X11 reads it from the window; others ignore it).
+fn app_icon() -> Option<std::sync::Arc<image::RgbaImage>> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    const SIZE: u32 = 128;
+    let rgba = yaltri_platform::icon::svg_rgba(include_str!("../../../assets/brand/app-icon.svg"), SIZE, None)?;
+    image::RgbaImage::from_raw(SIZE, SIZE, rgba).map(std::sync::Arc::new)
 }
 
 /// The frame every tool window draws: our titlebar over `content`.
@@ -228,7 +296,7 @@ pub fn window_frame(title: SharedString, p: &Palette, content: impl IntoElement)
         .bg(p.background)
         .text_color(p.foreground)
         .font_family(theme::ui_font())
-        .when(!cfg!(windows), |d| d.border_1().border_color(p.border).rounded(px(theme::R_WINDOW)))
+        .rounded(px(FRAME_INNER_RADIUS))
         .child(titlebar(title, p))
         .child(content)
 }
@@ -258,6 +326,7 @@ pub fn titlebar(title: SharedString, p: &Palette) -> Stateful<Div> {
         .flex()
         .items_center()
         .pr(px(6.))
+        .rounded_t(px(FRAME_INNER_RADIUS))
         .bg(p.background)
         .child(
             div()

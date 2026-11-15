@@ -1,9 +1,10 @@
 //! Shortcut recorder (PowerToys style): shows the shortcut as key caps; click
 //! it and press the new combination. Esc cancels, Backspace/Delete clears.
 //! Global hotkeys are suspended while recording so the combination reaches
-//! this window instead of triggering a tool. On Windows a low-level keyboard
-//! hook captures the keys system-wide, so combinations held by other
-//! programs (PowerToys' `Win+Shift+C`) can be recorded too.
+//! this window instead of triggering a tool. On Windows and X11 a keyboard
+//! grab (`yaltri_platform::keygrab`) takes the keys before the desktop does,
+//! so combinations held by other programs (PowerToys' `Win+Shift+C`) or the
+//! shell (GNOME's Super) can be recorded too.
 
 use std::time::Duration;
 
@@ -21,8 +22,11 @@ use crate::theme::{self, R_SM};
 use crate::ui;
 
 /// Recording ends by itself after this, as a safety net: while recording on
-/// Windows every key press system-wide goes to the recorder.
+/// Windows and X11 every key press goes to the recorder.
 const RECORD_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// How long the window may be inactive before recording stops.
+const DEACTIVATION_GRACE: Duration = Duration::from_millis(150);
 
 /// Emitted when the user recorded or cleared a shortcut.
 pub struct ShortcutChanged;
@@ -49,9 +53,11 @@ pub struct ShortcutInput {
     focus: FocusHandle,
     intercept: Option<Subscription>,
     /// System-wide key capture plus the task feeding it into this view.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     grab: Option<(yaltri_platform::keygrab::KeyGrab, Task<()>)>,
     timeout: Option<Task<()>>,
+    /// Pending stop after the window was deactivated.
+    deactivated: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -64,8 +70,17 @@ impl ShortcutInput {
             // Clicking elsewhere, or switching to another window, ends recording.
             cx.on_blur(&focus, window, |this, _, cx| this.stop(cx)),
             cx.observe_window_activation(window, |this, window, cx| {
-                if !window.is_window_active() {
-                    this.stop(cx);
+                if this.recording && !window.is_window_active() {
+                    // Stop only if the window stays inactive: starting the
+                    // X11 keyboard grab bounces focus out and straight back in.
+                    this.deactivated = Some(cx.spawn_in(window, async move |this, cx| {
+                        cx.background_executor().timer(DEACTIVATION_GRACE).await;
+                        let _ = this.update_in(cx, |this, window, cx| {
+                            if !window.is_window_active() {
+                                this.stop(cx);
+                            }
+                        });
+                    }));
                 }
             }),
             // Never leave hotkeys suspended if the window closes mid-recording.
@@ -84,9 +99,10 @@ impl ShortcutInput {
             conflict: false,
             focus,
             intercept: None,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             grab: None,
             timeout: None,
+            deactivated: None,
             _subscriptions: subscriptions,
         }
     }
@@ -136,7 +152,7 @@ impl ShortcutInput {
             let _ = weak.update(cx, |this, cx| this.on_keystroke(event, window, cx));
             cx.stop_propagation();
         }));
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         self.start_grab(window, cx);
         self.timeout = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(RECORD_TIMEOUT).await;
@@ -145,19 +161,28 @@ impl ShortcutInput {
         cx.notify();
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     fn start_grab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         use futures::StreamExt as _;
         use yaltri_platform::keygrab::{Grabbed, KeyGrab};
 
         let (tx, mut rx) = futures::channel::mpsc::unbounded::<Grabbed>();
-        let grab = match KeyGrab::start(move |event| {
+        let sink = move |event| {
             let _ = tx.unbounded_send(event);
-        }) {
+        };
+        #[cfg(windows)]
+        let grab = KeyGrab::start(sink);
+        #[cfg(target_os = "linux")]
+        let grab = {
+            // Wayland: no grab; the in-window interceptor does what it can.
+            let Some(xid) = ui::x11_window(window) else { return };
+            KeyGrab::start(xid, sink)
+        };
+        let grab = match grab {
             Ok(g) => g,
             Err(e) => {
                 // The in-window interceptor still works for free combinations.
-                tracing::warn!("keyboard hook unavailable: {e:#}");
+                tracing::warn!("keyboard grab unavailable: {e:#}");
                 return;
             }
         };
@@ -185,11 +210,12 @@ impl ShortcutInput {
         }
         self.recording = false;
         self.intercept = None;
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
-            self.grab = None; // unhooks the keyboard
+            self.grab = None; // releases the hook / X11 grab
         }
         self.timeout = None;
+        self.deactivated = None;
         self.held = Modifiers::default();
         self.error = None;
         cx.global_mut::<Daemon>().set_hotkeys_suspended(false);

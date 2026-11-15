@@ -336,9 +336,27 @@ impl Worker {
 
         let mut watched = Vec::new();
         for root in watch_targets(&self.scope) {
+            if !cfg!(windows) {
+                // One inotify watch per folder from a per-user pool that every
+                // program shares: taking most of it breaks change detection
+                // in the desktop, file managers and editors.
+                let budget = watch_budget();
+                if !dirs_within(&root, budget) {
+                    tracing::info!(root = %root.display(), budget, "too many folders to watch live; relying on periodic rescans");
+                    continue;
+                }
+            }
             match watcher.watch(&root, RecursiveMode::Recursive) {
                 Ok(()) => watched.push(root),
-                Err(e) => tracing::warn!(root = %root.display(), %e, "cannot watch folder"),
+                Err(e) => {
+                    tracing::warn!(root = %root.display(), %e, "cannot watch folder");
+                    if !cfg!(windows) {
+                        // A failed recursive inotify watch keeps the watches it
+                        // added; dropping the watcher gives them all back.
+                        self.shared.status.lock().unwrap().watched = Vec::new();
+                        return None;
+                    }
+                }
             }
         }
         tracing::info!(?watched, "watching for file changes");
@@ -381,6 +399,34 @@ fn nearest_known_ancestor(index: &FileIndex, dir: &Path) -> Option<(PathBuf, u32
     None
 }
 
+/// inotify watches live folders may use: a quarter of the per-user limit.
+fn watch_budget() -> usize {
+    std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches")
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .map_or(8192, |max| max / 4)
+}
+
+/// Whether `root` holds at most `budget` folders (itself included, symlinks
+/// not followed). Stops counting once over budget.
+fn dirs_within(root: &Path, budget: usize) -> bool {
+    let mut count = 0;
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        count += 1;
+        if count > budget {
+            return false;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                stack.push(entry.path());
+            }
+        }
+    }
+    true
+}
+
 /// Windows can watch whole drives cheaply (one handle per root). inotify
 /// needs one watch per folder and has a per-user limit, so on Linux only the
 /// home folder is watched live; the rest relies on periodic rescans.
@@ -398,6 +444,20 @@ fn watch_targets(scope: &Scope) -> Vec<PathBuf> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn counts_folders_up_to_a_budget() {
+        let base = std::env::temp_dir().join(format!("yaltri-dircount-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        for d in ["a/b/c", "a/d", "e"] {
+            fs::create_dir_all(base.join(d)).unwrap();
+        }
+        fs::write(base.join("a/file.txt"), "x").unwrap();
+        // base + a, a/b, a/b/c, a/d, e = 6 folders, one watch each.
+        assert!(dirs_within(&base, 6));
+        assert!(!dirs_within(&base, 5));
+        fs::remove_dir_all(&base).unwrap();
+    }
 
     fn wait_for(what: &str, mut cond: impl FnMut() -> bool) {
         let deadline = Instant::now() + Duration::from_secs(10);
