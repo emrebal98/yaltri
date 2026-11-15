@@ -46,7 +46,7 @@ Her araç **Ayarlar**'dan kapatılabilir.
 
 [**yaltri-windows-x86_64.exe**](https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-windows-x86_64.exe) dosyasını indir ve çalıştır.
 Bu kadar: Yaltri kendini kullanıcın için kurar (yönetici izni gerekmez), Başlat menüsüne eklenir ve tepside belirir.
-Güncellemek için yeni sürümü aynı şekilde indirip çalıştır.
+Güncellemeler kendiliğinden kurulur: [Güncellemeler](#güncellemeler) bölümüne bak.
 
 > İlk açılışta Windows "bilinmeyen yayıncı" uyarısı gösterebilir: **Ek bilgi → Yine de çalıştır**.
 
@@ -57,7 +57,7 @@ curl -fsSL https://github.com/emrebal98/yaltri/releases/latest/download/install.
 ```
 
 Script Yaltri'yi `~/.local/bin` içine koyar, başlatır ve eksik bir sistem kütüphanesi varsa kurulum komutunu söyler.
-Güncellemek için tekrar çalıştır.
+Güncellemeler kendiliğinden kurulur: [Güncellemeler](#güncellemeler) bölümüne bak.
 
 <details>
 <summary>Elle kurulum</summary>
@@ -134,6 +134,7 @@ yaltri toggle launcher    # arama kutusunu aç / kapat
 yaltri toggle picker      # renk seçiciyi aç
 yaltri settings           # ayarları aç
 yaltri quit               # kapat
+yaltri update             # inen güncellemeyi kur (yoksa denetle)
 yaltri uninstall          # kaldır (--purge: ayarlar ve geçmiş de)
 ```
 
@@ -149,6 +150,14 @@ yaltri uninstall          # kaldır (--purge: ayarlar ve geçmiş de)
   `bindsym $mod+Shift+f exec yaltri toggle launcher` (ve `yaltri toggle picker`).
 
 ---
+
+## Güncellemeler
+
+Yaltri günde bir kez yeni sürüm var mı diye bakar ve varsa arka planda indirir. Hazır olunca tepsi
+menüsünde ve **Ayarlar → Hakkında**'da **Yeniden başlat ve güncelle** çıkar; tıklayınca Yaltri birkaç saniyede
+güncellenip yeniden açılır. Günlük denetimi **Ayarlar → Genel**'den kapatabilirsin; Ayarlar → Hakkında'daki
+buton yine istediğinde denetler. Linux'ta bu, `install.sh` ile kurulan kopya için çalışır; paket yöneticisiyle
+kurulan kopyayı paket yöneticisi günceller.
 
 ## Ayarlar ve dosyalar
 

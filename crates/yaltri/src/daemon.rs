@@ -20,6 +20,7 @@ use yaltri_platform::session::Session;
 use yaltri_platform::tray::{self, Tray};
 
 use crate::color_editor::ColorEditor;
+use crate::update::{self, UpdateState};
 use crate::{launcher, picker, settings_view};
 
 pub struct Daemon {
@@ -39,13 +40,15 @@ pub struct Daemon {
     pub colors: ColorHistory,
     pub color_editor: Option<Entity<ColorEditor>>,
     pub color_editor_window: Option<AnyWindowHandle>,
-    tx: CommandSender,
+    pub tx: CommandSender,
     tray: Option<Tray>,
     /// App theme the tray menu icons were drawn for.
     tray_apps_light: bool,
     hotkeys: Option<Hotkeys>,
     /// True while a shortcut is being recorded in settings.
     hotkeys_suspended: bool,
+    /// Where the updater stands (`update`).
+    pub update: UpdateState,
     /// GNOME desktops: our shortcuts live there as custom shortcuts (see
     /// `gnome_keys`), plus the specs last applied. `None` elsewhere.
     #[cfg(target_os = "linux")]
@@ -63,6 +66,9 @@ impl Global for Daemon {}
 const HOTKEY_RETRY: Duration = Duration::from_secs(20);
 /// How often the tray checks the taskbar theme (no event for it).
 const THEME_POLL: Duration = Duration::from_secs(5);
+/// First automatic update check after start, then the interval between.
+const UPDATE_FIRST_CHECK: Duration = Duration::from_secs(60);
+const UPDATE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<()> {
     let first_run = !paths.settings_file().exists();
@@ -110,6 +116,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 tray_apps_light: yaltri_platform::icon::apps_use_light_theme(),
                 hotkeys: None,
                 hotkeys_suspended: false,
+                update: UpdateState::Idle,
                 #[cfg(target_os = "linux")]
                 gnome,
                 #[cfg(target_os = "linux")]
@@ -139,6 +146,20 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 loop {
                     cx.background_executor().timer(THEME_POLL).await;
                     cx.update(|cx| cx.global_mut::<Daemon>().refresh_tray_theme());
+                }
+            })
+            .detach();
+
+            cx.background_executor().spawn(async { update::remove_old_downloads() }).detach();
+            cx.spawn(async move |cx| {
+                cx.background_executor().timer(UPDATE_FIRST_CHECK).await;
+                loop {
+                    cx.update(|cx| {
+                        if cx.global::<Daemon>().settings.general.check_updates {
+                            check_update(cx);
+                        }
+                    });
+                    cx.background_executor().timer(UPDATE_INTERVAL).await;
                 }
             })
             .detach();
@@ -196,7 +217,12 @@ impl Daemon {
                 shortcut,
             })
         };
-        let mut items: Vec<Option<tray::MenuEntry>> = ToolId::ALL
+        let mut items: Vec<Option<tray::MenuEntry>> = Vec::new();
+        if let UpdateState::Ready { release, .. } = &self.update {
+            items.push(entry(&crate::i18n::tf("tray.update", &[("version", &release.version)]), Command::Update, "download", None));
+            items.push(None);
+        }
+        items.extend(ToolId::ALL
             .into_iter()
             .filter(|t| self.settings.is_enabled(*t) && is_implemented(*t))
             .map(|tool| {
@@ -209,8 +235,8 @@ impl Daemon {
                     && (self.session.supports_global_hotkeys() || self.uses_gnome_shortcuts() || self.uses_portal_shortcuts()))
                     .then(|| yaltri_platform::keys::display_parts(spec).join("+"));
                 entry(crate::settings_view::tool_name(tool), Command::Toggle(tool), icon, shortcut)
-            })
-            .collect();
+            }),
+        );
         items.push(entry(t("tray.settings"), Command::Settings, "settings", None));
         items.push(None);
         items.push(entry(t("tray.quit"), Command::Quit, "power", None));
@@ -512,6 +538,22 @@ fn handle(cmd: Command, cx: &mut App) {
             }
         }
         Command::Settings => settings_view::open(cx),
+        Command::Update => match cx.global::<Daemon>().update.clone() {
+            UpdateState::Ready { release, file } => match update::install(&file) {
+                Ok(()) => {
+                    tracing::info!(version = release.version, "installing update, restarting");
+                    handle(Command::Quit, cx);
+                }
+                Err(e) => {
+                    tracing::warn!("installing update failed: {e:#}");
+                    set_update_state(UpdateState::Failed, cx);
+                }
+            },
+            UpdateState::Available(_) => {
+                let _ = open::that_detached(update::RELEASES_URL);
+            }
+            _ => check_update(cx),
+        },
         Command::Quit => {
             tracing::info!("quit requested");
             #[cfg(target_os = "linux")]
@@ -519,6 +561,67 @@ fn handle(cmd: Command, cx: &mut App) {
                 gnome.restore_all();
             }
             cx.quit();
+        }
+    }
+}
+
+/// Looks for a newer release and, when this copy can install it, downloads
+/// it in the background; "Restart to update" then appears in the tray and
+/// Settings. Does nothing while a check or download is running or an update
+/// is waiting.
+pub fn check_update(cx: &mut App) {
+    if matches!(
+        cx.global::<Daemon>().update,
+        UpdateState::Checking | UpdateState::Downloading(_) | UpdateState::Ready { .. }
+    ) {
+        return;
+    }
+    set_update_state(UpdateState::Checking, cx);
+    let check = cx.background_executor().spawn(async { update::check() });
+    cx.spawn(async move |cx| {
+        let next = match check.await {
+            Ok(None) => UpdateState::UpToDate,
+            Ok(Some(release)) if update::can_install() => UpdateState::Downloading(release),
+            Ok(Some(release)) => UpdateState::Available(release),
+            Err(e) => {
+                tracing::warn!("update check failed: {e:#}");
+                UpdateState::Failed
+            }
+        };
+        let to_download = match &next {
+            UpdateState::Downloading(release) => Some(release.clone()),
+            _ => None,
+        };
+        cx.update(|cx| set_update_state(next, cx));
+        let Some(release) = to_download else { return };
+        tracing::info!(version = release.version, "downloading update");
+        let job = release.clone();
+        let file = cx.background_executor().spawn(async move { update::download(&job) }).await;
+        let next = match file {
+            Ok(file) => {
+                tracing::info!(version = release.version, file = %file.display(), "update ready");
+                UpdateState::Ready { release, file }
+            }
+            Err(e) => {
+                tracing::warn!("downloading update failed: {e:#}");
+                UpdateState::Failed
+            }
+        };
+        cx.update(|cx| set_update_state(next, cx));
+    })
+    .detach();
+}
+
+fn set_update_state(state: UpdateState, cx: &mut App) {
+    let daemon = cx.global_mut::<Daemon>();
+    let tray_changes = matches!(state, UpdateState::Ready { .. }) != matches!(daemon.update, UpdateState::Ready { .. });
+    daemon.update = state;
+    if tray_changes {
+        let menu = daemon.tray_menu();
+        if let Some(tray) = daemon.tray.as_mut()
+            && let Err(e) = tray.set_menu(menu)
+        {
+            tracing::warn!("updating tray menu failed: {e:#}");
         }
     }
 }
