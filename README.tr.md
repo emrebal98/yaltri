@@ -142,10 +142,11 @@ yaltri uninstall          # kaldır (--purge: ayarlar ve geçmiş de)
 - **GNOME (X11 ve Wayland):** Yaltri kısayollarını GNOME'un özel kısayollarına kendisi ekler ve Ayarlar'la
   senkron tutar. GNOME aynı tuşları zaten kullanıyorsa (örneğin `Super+Space` klavye dilini değiştirir),
   Yaltri çalıştığı sürece onları devralır; kısayolu değiştirince veya çıkınca geri verir.
-- **Diğer Wayland masaüstleri** uygulamaların global kısayol tanımlamasına izin vermez. Kısayolu masaüstü
-  ayarlarından ekle, komut olarak `yaltri toggle launcher` (veya `yaltri toggle picker`) yaz:
-  - **KDE:** Sistem Ayarları → Kısayollar → Özel Kısayollar
-  - **Hyprland:** `bind = SUPER SHIFT, F, exec, yaltri toggle launcher`
+- **KDE Plasma, Hyprland ve global kısayol portalı olan diğer Wayland masaüstleri:** Yaltri kısayollarını
+  masaüstüne kaydeder. İlk seferde masaüstü onay ister ve başka tuş seçmene izin verebilir; sonrasında
+  kısayolları masaüstünün kendi kısayol ayarlarından değiştirirsin.
+- **Sway ve bu portalı olmayan diğer masaüstleri:** komutu config dosyana bağla, örneğin
+  `bindsym $mod+Shift+f exec yaltri toggle launcher` (ve `yaltri toggle picker`).
 
 ---
 

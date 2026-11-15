@@ -143,10 +143,11 @@ yaltri uninstall          # uninstall (--purge: settings and history too)
 - **GNOME (X11 and Wayland):** Yaltri adds its shortcuts to GNOME's custom shortcuts by itself and keeps
   them in sync with Settings. If GNOME already uses the same keys (for example `Super+Space` switches the
   keyboard layout), Yaltri takes them while it runs and gives them back when you change the shortcut or quit.
-- **Other Wayland desktops** do not let apps register global shortcuts. Add one in your desktop settings
-  with the command `yaltri toggle launcher` (or `yaltri toggle picker`):
-  - **KDE:** System Settings → Shortcuts → Custom Shortcuts
-  - **Hyprland:** `bind = SUPER SHIFT, F, exec, yaltri toggle launcher`
+- **KDE Plasma, Hyprland and other Wayland desktops** with the global shortcuts portal: Yaltri registers its
+  shortcuts with the desktop. The first time, the desktop asks you to approve them and may let you pick other
+  keys; after that, change them in the desktop's own shortcut settings.
+- **Sway and other desktops without that portal:** bind the command in your config, for example
+  `bindsym $mod+Shift+f exec yaltri toggle launcher` (and `yaltri toggle picker`).
 
 ---
 

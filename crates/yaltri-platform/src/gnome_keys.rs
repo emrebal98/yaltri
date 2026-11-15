@@ -224,7 +224,7 @@ fn is_ours(path: &str) -> bool {
 }
 
 /// `Super+Space` -> `<Super>space`, the form GNOME's settings take.
-fn accel_from_spec(spec: &str) -> Option<String> {
+pub(crate) fn accel_from_spec(spec: &str) -> Option<String> {
     let mut parts: Vec<&str> = spec.split('+').map(str::trim).filter(|p| !p.is_empty()).collect();
     let key = parts.pop()?;
     let mut accel = String::new();

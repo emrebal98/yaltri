@@ -50,6 +50,10 @@ pub struct Daemon {
     /// `gnome_keys`), plus the specs last applied. `None` elsewhere.
     #[cfg(target_os = "linux")]
     gnome: Option<(yaltri_platform::gnome_keys::GnomeKeys, Option<Vec<String>>)>,
+    /// Other Wayland desktops: shortcuts through the desktop portal
+    /// (`portal_keys`), plus the bindings last sent. `None` elsewhere.
+    #[cfg(target_os = "linux")]
+    portal: Option<(yaltri_platform::portal_keys::PortalKeys, Option<Vec<yaltri_platform::portal_keys::PortalBinding>>)>,
     files: Option<(Scope, FileIndexer)>,
     apps: Option<Arc<AppsProvider>>,
 }
@@ -108,6 +112,8 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 hotkeys_suspended: false,
                 #[cfg(target_os = "linux")]
                 gnome,
+                #[cfg(target_os = "linux")]
+                portal: None,
                 files: None,
                 apps: None,
             };
@@ -162,6 +168,12 @@ impl Daemon {
         }
         if self.uses_gnome_shortcuts() {
             tracing::info!("shortcuts go through GNOME custom shortcuts");
+        } else if self.session == Session::WaylandLayerShell {
+            #[cfg(target_os = "linux")]
+            {
+                tracing::info!("shortcuts go through the desktop's global shortcuts portal");
+                self.portal = Some((yaltri_platform::portal_keys::PortalKeys::start(self.tx.clone()), None));
+            }
         } else if self.session.supports_global_hotkeys() {
             match Hotkeys::new(self.tx.clone()) {
                 Ok(h) => self.hotkeys = Some(h),
@@ -193,7 +205,8 @@ impl Daemon {
                     ToolId::Picker => "pipette",
                 };
                 let spec = self.settings.hotkey(tool);
-                let shortcut = (!spec.is_empty() && (self.session.supports_global_hotkeys() || self.uses_gnome_shortcuts()))
+                let shortcut = (!spec.is_empty()
+                    && (self.session.supports_global_hotkeys() || self.uses_gnome_shortcuts() || self.uses_portal_shortcuts()))
                     .then(|| yaltri_platform::keys::display_parts(spec).join("+"));
                 entry(crate::settings_view::tool_name(tool), Command::Toggle(tool), icon, shortcut)
             })
@@ -229,9 +242,19 @@ impl Daemon {
             if let Some(hotkeys) = self.hotkeys.as_mut() {
                 hotkeys.apply(&[]);
             }
+            #[cfg(target_os = "linux")]
+            self.apply_portal_shortcuts(&[]);
         } else {
             self.apply_hotkeys();
         }
+    }
+
+    /// Other Wayland desktops: shortcuts go through the desktop portal.
+    fn uses_portal_shortcuts(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        return self.portal.is_some();
+        #[cfg(not(target_os = "linux"))]
+        false
     }
 
     /// GNOME: shortcuts are GNOME custom shortcuts, not our own grabs.
@@ -252,6 +275,10 @@ impl Daemon {
         #[cfg(target_os = "linux")]
         if let Some(errors) = self.apply_gnome_shortcuts(&bindings) {
             self.set_hotkey_errors(errors);
+            return;
+        }
+        #[cfg(target_os = "linux")]
+        if self.apply_portal_shortcuts(&bindings) {
             return;
         }
         let Some(hotkeys) = self.hotkeys.as_mut() else {
@@ -290,6 +317,35 @@ impl Daemon {
         // Failures are retried by `retry_failed_hotkeys`.
         *applied = errors.is_empty().then_some(specs);
         Some(errors)
+    }
+
+    /// Other Wayland desktops: sends `bindings` to the desktop portal when
+    /// they changed (the desktop may ask the user to approve them). `false`
+    /// when the portal is not in use.
+    #[cfg(target_os = "linux")]
+    fn apply_portal_shortcuts(&mut self, bindings: &[(ToolId, String)]) -> bool {
+        let suspended = self.hotkeys_suspended;
+        let Some((portal, applied)) = self.portal.as_mut() else {
+            return false;
+        };
+        let wanted: Vec<_> = if suspended {
+            Vec::new()
+        } else {
+            bindings
+                .iter()
+                .map(|(tool, spec)| yaltri_platform::portal_keys::PortalBinding {
+                    id: tool.to_string(),
+                    description: format!("Yaltri: {}", crate::settings_view::tool_name(*tool)),
+                    spec: spec.clone(),
+                    command: Command::Toggle(*tool),
+                })
+                .collect()
+        };
+        if applied.as_ref() != Some(&wanted) {
+            portal.apply(wanted.clone());
+            *applied = Some(wanted);
+        }
+        true
     }
 
     fn set_hotkey_errors(&mut self, errors: Vec<HotkeyError>) {
