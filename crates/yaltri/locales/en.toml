@@ -144,3 +144,5 @@
 "settings.general.autostart" = "Start with system"
 "settings.general.autostart_hint" = "Runs quietly in the tray after you sign in"
 "settings.general.autostart_failed" = "Could not change the startup entry: {error}"
+"uninstall.title" = "Uninstall Yaltri"
+"uninstall.delete_data" = "Also delete Yaltri's settings, search history and saved colors?"

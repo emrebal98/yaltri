@@ -5,6 +5,8 @@ mod assets;
 mod color_editor;
 mod daemon;
 mod i18n;
+#[cfg(windows)]
+mod install;
 mod launcher;
 mod picker;
 mod picker_zoom;
@@ -31,6 +33,7 @@ komutlar:
   toggle picker      renk seçiciyi aç/kapat
   settings           ayarlar penceresini aç
   quit               çalışan yaltri'yi kapat
+  uninstall          yaltri'yi kaldır (Windows)
 
 Wayland'da global kısayolu masaüstü ayarlarından bu komutlara bağlayın,
 ör. GNOME: Ayarlar > Klavye > Özel Kısayollar > `yaltri toggle launcher`.";
@@ -44,6 +47,9 @@ fn main() -> ExitCode {
     if args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
+    }
+    if args == ["uninstall"] {
+        return uninstall();
     }
     let command = match Command::from_args(&args) {
         Ok(c) => c,
@@ -63,7 +69,38 @@ fn main() -> ExitCode {
     }
 }
 
+#[cfg(windows)]
+fn uninstall() -> ExitCode {
+    match install::uninstall() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("hata: {e:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn uninstall() -> ExitCode {
+    eprintln!("hata: `uninstall` yalnızca Windows'ta; Linux için README'deki adımlara bakın");
+    ExitCode::from(2)
+}
+
 fn run(session: Session, command: Option<Command>) -> Result<()> {
+    let paths = Paths::detect()?;
+    // Logging is for the daemon (and installing it), not for commands
+    // forwarded to one; it can be set up only once.
+    let mut log_guard = None;
+
+    // Started from a download: install, start the installed copy, leave.
+    #[cfg(windows)]
+    if command.is_none() {
+        log_guard = Some(init_logging(&paths));
+        if matches!(install::self_install(), install::Outcome::Handed) {
+            return Ok(());
+        }
+    }
+
     // A daemon is already running: hand it the command and leave.
     if ipc::send_to_daemon(command)? == Delivery::Delivered {
         return Ok(());
@@ -72,8 +109,7 @@ fn run(session: Session, command: Option<Command>) -> Result<()> {
         return Ok(());
     }
 
-    let paths = Paths::detect()?;
-    let _log_guard = init_logging(&paths);
+    let _log_guard = log_guard.unwrap_or_else(|| init_logging(&paths));
     tracing::info!(?session, version = env!("CARGO_PKG_VERSION"), "starting daemon");
 
     daemon::run(paths, session, command)

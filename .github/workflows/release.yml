@@ -78,17 +78,15 @@ jobs:
       - name: Build
         run: cargo build --release --locked -p yaltri --target ${{ matrix.target }}
 
+      # Version-less names keep `releases/latest/download/<asset>` links stable.
+      # Windows ships the bare executable: run it and it installs itself.
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # Version-less names keep `releases/latest/download/<asset>` links stable.
-          $name = "yaltri-${{ matrix.target }}"
-          New-Item -ItemType Directory $name | Out-Null
-          Copy-Item target/${{ matrix.target }}/release/yaltri.exe, README.md, README.tr.md, LICENSE $name
-          Compress-Archive -Path $name -DestinationPath "$name.zip"
-          (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
-          "ASSET=$name.zip" >> $env:GITHUB_ENV
+          Copy-Item target/${{ matrix.target }}/release/yaltri.exe yaltri.exe
+          (Get-FileHash yaltri.exe -Algorithm SHA256).Hash.ToLower() + "  yaltri.exe" | Out-File -Encoding ascii yaltri.exe.sha256
+          "ASSET=yaltri.exe" >> $env:GITHUB_ENV
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
@@ -96,9 +94,14 @@ jobs:
           name="yaltri-${{ matrix.target }}"
           mkdir "$name"
           cp target/${{ matrix.target }}/release/yaltri README.md README.tr.md LICENSE "$name/"
+          cp assets/icons/LICENSE "$name/LICENSE-lucide"
           tar czf "$name.tar.gz" "$name"
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
           echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
+          # The one-line installer is served from the release too (copied to
+          # the root so the artifact keeps every file at the top level).
+          cp scripts/install.sh install.sh
+          echo "EXTRA=install.sh" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -106,6 +109,7 @@ jobs:
           path: |
             ${{ env.ASSET }}
             ${{ env.ASSET }}.sha256
+            ${{ env.EXTRA }}
           if-no-files-found: error
 
   publish:

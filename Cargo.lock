@@ -8884,6 +8884,7 @@ dependencies = [
  "tracing",
  "tray-icon",
  "ttf-parser",
+ "windows 0.62.2",
  "windows-sys 0.61.2",
  "x11rb",
  "yaltri-core",

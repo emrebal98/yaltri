@@ -13,6 +13,8 @@ pub mod desktop_font;
 pub mod gnome_keys;
 pub mod hotkeys;
 pub mod icon;
+#[cfg(windows)]
+pub mod install;
 pub mod ipc;
 #[cfg(any(windows, target_os = "linux"))]
 pub mod keygrab;

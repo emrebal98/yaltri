@@ -11,7 +11,7 @@ you need, and it gets out of your way.
 - **Calculate:** `2^10`, `5 km to mi`, `=pi`. Press Enter to copy the result.
 - **Pick colors:** Grab a color from anywhere on screen and copy it in the format you want.
 
-Looks the same on Windows and Linux (Ubuntu, Arch). A single file: no installer, no internet connection.
+Looks the same on Windows and Linux (Ubuntu, Arch). A single small program, no admin rights; it goes online only when you check for updates.
 
 [![Release](https://img.shields.io/github/v/release/emrebal98/yaltri?include_prereleases)](https://github.com/emrebal98/yaltri/releases)
 [![CI](https://github.com/emrebal98/yaltri/actions/workflows/ci.yml/badge.svg)](https://github.com/emrebal98/yaltri/actions/workflows/ci.yml)
@@ -23,13 +23,23 @@ Looks the same on Windows and Linux (Ubuntu, Arch). A single file: no installer,
 
 ### Windows
 
-1. Download [**yaltri-x86_64-pc-windows-msvc.zip**](https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-x86_64-pc-windows-msvc.zip).
-2. Extract it to any folder.
-3. Run `yaltri.exe`. The tray icon appears.
+Download [**yaltri.exe**](https://github.com/emrebal98/yaltri/releases/latest/download/yaltri.exe) and run it.
+That's it: Yaltri installs itself for your user (no admin rights), adds itself to the Start menu and appears in the tray.
+To update, download and run the new `yaltri.exe` the same way.
 
 > On first launch Windows may warn about an unknown publisher: **More info → Run anyway**.
 
 ### Linux
+
+```sh
+curl -fsSL https://github.com/emrebal98/yaltri/releases/latest/download/install.sh | sh
+```
+
+The script puts Yaltri in `~/.local/bin`, starts it, and tells you the exact command if a system library is missing.
+Run it again to update.
+
+<details>
+<summary>Manual install</summary>
 
 ```sh
 curl -LO https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-x86_64-unknown-linux-gnu.tar.gz
@@ -37,6 +47,8 @@ tar xzf yaltri-x86_64-unknown-linux-gnu.tar.gz
 install -Dm755 yaltri-x86_64-unknown-linux-gnu/yaltri ~/.local/bin/yaltri
 yaltri
 ```
+
+</details>
 
 If a library is missing:
 
@@ -102,6 +114,7 @@ yaltri toggle launcher    # open / close search
 yaltri toggle picker      # open the color picker
 yaltri settings           # open settings
 yaltri quit               # quit
+yaltri uninstall          # uninstall (Windows)
 ```
 
 ### Shortcuts on Linux
@@ -123,8 +136,11 @@ yaltri quit               # quit
 | Settings | `%APPDATA%\yaltri\config\settings.toml` | `~/.config/yaltri/settings.toml` |
 | Index, history, logs | `%LOCALAPPDATA%\yaltri\data` | `~/.local/share/yaltri` |
 
-**To uninstall:** turn off **Start with system** in Settings, choose **Quit** from the tray menu, then delete
-the `yaltri` binary and both folders. On Linux also delete `~/.local/share/applications/yaltri.desktop` and
+**To uninstall on Windows:** Settings → Apps → Installed apps → Yaltri → **Uninstall**. It asks whether to delete
+your settings and history too.
+
+**To uninstall on Linux:** turn off **Start with system** in Settings, choose **Quit** from the tray menu, then delete
+`~/.local/bin/yaltri`, both folders above, `~/.local/share/applications/yaltri.desktop` and
 `~/.local/share/icons/hicolor/scalable/apps/yaltri.svg`.
 
 ---
@@ -215,4 +231,4 @@ To try the build without releasing: **Actions → Release → Run workflow**.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Icons from [Lucide](https://lucide.dev) ([ISC](assets/icons/LICENSE)).
