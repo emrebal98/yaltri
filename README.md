@@ -199,15 +199,17 @@ To add one, copy `README.md`, translate it, and add a link to the language line 
 
 ### Releasing
 
-1. Bump `[workspace.package] version` in `Cargo.toml` and commit.
-2. Push a tag:
-   ```sh
-   git tag v0.2.0
-   git push origin v0.2.0
-   ```
+Releases are prepared by [release-please](https://github.com/googleapis/release-please) from the PR titles on `main`:
 
-GitHub Actions builds the Windows and Linux packages and uploads them to
-[Releases](https://github.com/emrebal98/yaltri/releases). Tags like `v0.2.0-beta.1` are published as pre-releases.
+- After a `feat`, `fix` or `perf` PR is merged, a **`chore(main): release x.y.z`** PR opens (or updates) with the
+  next version, the new `CHANGELOG.md` entry and the bumped versions in `Cargo.toml` / `Cargo.lock`.
+  `feat` bumps the middle number (`0.2.0 → 0.3.0`), `fix` and `perf` the last one (`0.2.0 → 0.2.1`).
+  `docs`, `chore`, `ci`, `refactor` and `test` do not make a release on their own.
+- Keep merging PRs; the release PR collects them. Nothing is released until you merge it.
+- Merging the release PR tags the version, builds the Windows and Linux packages, attaches them to the
+  [release](https://github.com/emrebal98/yaltri/releases) and publishes it with the changelog as its notes.
+
+To try the build without releasing: **Actions → Release → Run workflow**.
 
 ---
 

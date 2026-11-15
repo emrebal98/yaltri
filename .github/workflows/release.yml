@@ -1,19 +1,47 @@
 name: Release
 
-# Push a tag like `v0.2.0` (matching the workspace version) to build and
-# publish a release. `workflow_dispatch` builds the same artifacts without
-# publishing, to try the pipeline.
+# release-please watches main. Every merged `feat`/`fix`/`perf` PR updates one
+# open "chore(main): release x.y.z" PR: the next version (feat -> minor, fix ->
+# patch; while on 0.x a breaking change also bumps minor), CHANGELOG.md and the
+# crate versions in Cargo.toml / Cargo.lock. Nothing is released until that PR
+# is merged. Merging it creates the tag and a draft GitHub release; the jobs
+# below build the Windows and Linux packages, attach them, and publish it.
+#
+# `workflow_dispatch` only builds the packages (as workflow artifacts), to try
+# the pipeline without releasing anything.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
 
 jobs:
+  release-please:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      created: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
   build:
+    needs: release-please
+    if: ${{ !cancelled() && (needs.release-please.outputs.created == 'true' || github.event_name == 'workflow_dispatch') }}
     name: build (${{ matrix.target }})
     strategy:
       fail-fast: false
@@ -27,16 +55,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Check tag matches the crate version
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $version"
-            exit 1
-          fi
+        with:
+          ref: ${{ needs.release-please.outputs.tag || github.ref }}
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -89,19 +109,24 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [release-please, build]
+    if: ${{ !cancelled() && needs.release-please.outputs.created == 'true' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.release-please.outputs.tag }}
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+      # The release stays a draft until the packages are attached, so the
+      # download links and the in-app update check never see it half done.
+      - name: Attach packages and publish
+        run: |
+          gh release upload "$TAG" dist/* --clobber
+          gh release edit "$TAG" --draft=false --latest

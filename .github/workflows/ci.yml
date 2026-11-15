@@ -35,6 +35,10 @@ jobs:
             libwayland-dev libx11-dev libx11-xcb-dev libxcb1-dev \
             libfontconfig-dev libfreetype-dev libvulkan-dev libdbus-1-dev
 
+      - name: Release config lists every crate
+        if: runner.os == 'Linux'
+        run: sh scripts/check-release-config.sh
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
