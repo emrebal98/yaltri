@@ -34,18 +34,18 @@ pub fn open(cx: &mut App) {
 
 /// Opens settings scrolled to `tool`'s section (the top when `None`).
 pub fn open_at(tool: Option<ToolId>, cx: &mut App) {
-    if let Some(handle) = cx.global::<Daemon>().settings_window
+    if let Some((handle, view)) = cx.global::<Daemon>().settings_window.clone()
         && cx.windows().contains(&handle)
     {
-        let _ = handle.update(cx, |root, window, cx| {
-            if let (Some(tool), Ok(view)) = (tool, root.downcast::<SettingsView>()) {
-                view.update(cx, |view, cx| {
-                    view.scroll_to = Some(tool);
-                    cx.notify();
-                });
-            }
-            window.activate_window();
-        });
+        // The window's root is gpui-kit's wrapper, so reach the view
+        // through the handle kept at open time.
+        if let Some(tool) = tool {
+            let _ = view.update(cx, |view, cx| {
+                view.scroll_to = Some(tool);
+                cx.notify();
+            });
+        }
+        let _ = handle.update(cx, |_, window, _| window.activate_window());
         return;
     }
 
@@ -58,8 +58,8 @@ pub fn open_at(tool: Option<ToolId>, cx: &mut App) {
         })
     };
     match gpui_kit::open_window(options, cx, build) {
-        Ok((handle, _)) => {
-            cx.global_mut::<Daemon>().settings_window = Some(handle);
+        Ok((handle, view)) => {
+            cx.global_mut::<Daemon>().settings_window = Some((handle, view.downgrade()));
             let _ = handle.update(cx, |_, window, _| window.activate_window());
             cx.activate(true);
         }
