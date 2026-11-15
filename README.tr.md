@@ -198,15 +198,17 @@ Yeni dil eklemek için `README.md`'yi kopyala, çevir ve her README'nin en üst�
 
 ### Sürüm yayınlamak
 
-1. `Cargo.toml` içinde `[workspace.package] version` değerini artır ve commit'le.
-2. Etiketi gönder:
-   ```sh
-   git tag v0.2.0
-   git push origin v0.2.0
-   ```
+Sürümleri `main`'deki PR başlıklarından [release-please](https://github.com/googleapis/release-please) hazırlar:
 
-GitHub Actions Windows ve Linux paketlerini derleyip [Releases](https://github.com/emrebal98/yaltri/releases)
-sayfasına yükler. `v0.2.0-beta.1` gibi etiketler ön sürüm olarak yayınlanır.
+- Bir `feat`, `fix` ya da `perf` PR'ı merge edilince **`chore(main): release x.y.z`** PR'ı açılır (ya da güncellenir).
+  İçinde sıradaki sürüm, yeni `CHANGELOG.md` girdisi ve `Cargo.toml` / `Cargo.lock` içindeki sürüm artışı olur.
+  `feat` ortadaki sayıyı (`0.2.0 → 0.3.0`), `fix` ve `perf` sondakini (`0.2.0 → 0.2.1`) artırır.
+  `docs`, `chore`, `ci`, `refactor` ve `test` tek başına sürüm çıkarmaz.
+- PR'ları merge etmeye devam et; sürüm PR'ı hepsini toplar. Sen onu merge edene kadar hiçbir şey yayınlanmaz.
+- Sürüm PR'ı merge edilince sürüm etiketlenir, Windows ve Linux paketleri derlenip
+  [sürüme](https://github.com/emrebal98/yaltri/releases) eklenir ve değişiklik listesiyle birlikte yayınlanır.
+
+Yayınlamadan derlemeyi denemek için: **Actions → Release → Run workflow**.
 
 ---
 
