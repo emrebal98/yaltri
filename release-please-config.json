@@ -18,6 +18,7 @@
   ],
   "packages": {
     ".": {
+      "initial-version": "0.1.0",
       "extra-files": [
         { "type": "toml", "path": "Cargo.toml", "jsonpath": "$.workspace.package.version" },
         { "type": "toml", "path": "Cargo.lock", "jsonpath": "$.package[?(@.name.value=='yaltri' || @.name.value=='yaltri-apps' || @.name.value=='yaltri-calc' || @.name.value=='yaltri-color' || @.name.value=='yaltri-core' || @.name.value=='yaltri-files' || @.name.value=='yaltri-platform')].version" }
