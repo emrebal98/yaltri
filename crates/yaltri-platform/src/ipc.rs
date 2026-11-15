@@ -60,6 +60,22 @@ pub fn send_to_daemon(cmd: Option<Command>) -> Result<Delivery> {
 /// Windows only lets the foreground process raise windows. The CLI usually is
 /// foreground (the user or a shortcut just started it), so hand that right to
 /// the daemon before asking it to show a window.
+/// Asks a running Yaltri to quit and waits until it is gone (or `timeout`
+/// passes). Nothing running is fine.
+pub fn quit_daemon(timeout: std::time::Duration) -> Result<()> {
+    if send_to_daemon(Some(Command::Quit))? == Delivery::NoDaemon {
+        return Ok(());
+    }
+    let start = std::time::Instant::now();
+    while send_to_daemon(None)? == Delivery::Delivered {
+        if start.elapsed() >= timeout {
+            bail!("the running Yaltri did not quit");
+        }
+        thread::sleep(std::time::Duration::from_millis(100));
+    }
+    Ok(())
+}
+
 fn allow_daemon_to_take_focus() {
     #[cfg(windows)]
     // SAFETY: plain Win32 call without pointers.

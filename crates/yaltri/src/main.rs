@@ -7,6 +7,8 @@ mod daemon;
 mod i18n;
 #[cfg(windows)]
 mod install;
+#[cfg(target_os = "linux")]
+mod uninstall_linux;
 mod launcher;
 mod picker;
 mod picker_zoom;
@@ -33,7 +35,8 @@ komutlar:
   toggle picker      renk seçiciyi aç/kapat
   settings           ayarlar penceresini aç
   quit               çalışan yaltri'yi kapat
-  uninstall          yaltri'yi kaldır (Windows)
+  uninstall          yaltri'yi kaldır; ayarlar ve geçmiş için sorar
+  uninstall --purge  yaltri'yi ayarları ve geçmişiyle birlikte kaldır
 
 Wayland'da global kısayolu masaüstü ayarlarından bu komutlara bağlayın,
 ör. GNOME: Ayarlar > Klavye > Özel Kısayollar > `yaltri toggle launcher`.";
@@ -48,8 +51,17 @@ fn main() -> ExitCode {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
     }
-    if args == ["uninstall"] {
-        return uninstall();
+    if args.first().is_some_and(|a| a == "uninstall") {
+        return match args[1..] {
+            [] => uninstall(false),
+            [ref flag] if flag == "--purge" => uninstall(true),
+            _ => {
+                eprintln!("hata: `uninstall` yalnızca `--purge` alır
+
+{USAGE}");
+                ExitCode::from(2)
+            }
+        };
     }
     let command = match Command::from_args(&args) {
         Ok(c) => c,
@@ -69,21 +81,24 @@ fn main() -> ExitCode {
     }
 }
 
-#[cfg(windows)]
-fn uninstall() -> ExitCode {
-    match install::uninstall() {
+fn uninstall(purge: bool) -> ExitCode {
+    i18n::use_saved_language();
+    #[cfg(windows)]
+    let result = install::uninstall(purge);
+    #[cfg(target_os = "linux")]
+    let result = uninstall_linux::uninstall(purge);
+    #[cfg(not(any(windows, target_os = "linux")))]
+    let result: Result<()> = {
+        let _ = purge;
+        Err(anyhow::anyhow!("`uninstall` is not available on this system"))
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("hata: {e:#}");
             ExitCode::FAILURE
         }
     }
-}
-
-#[cfg(not(windows))]
-fn uninstall() -> ExitCode {
-    eprintln!("hata: `uninstall` yalnızca Windows'ta; Linux için README'deki adımlara bakın");
-    ExitCode::from(2)
 }
 
 fn run(session: Session, command: Option<Command>) -> Result<()> {

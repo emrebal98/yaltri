@@ -8,10 +8,9 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result};
-use yaltri_core::Command;
 use yaltri_core::paths::Paths;
 use yaltri_platform::install;
-use yaltri_platform::ipc::{self, Delivery};
+use yaltri_platform::ipc;
 
 use crate::i18n::t;
 
@@ -65,17 +64,8 @@ fn install_from(exe: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Asks a running Yaltri to quit and waits until it is gone.
 fn quit_running() -> Result<()> {
-    if ipc::send_to_daemon(Some(Command::Quit))? == Delivery::NoDaemon {
-        return Ok(());
-    }
-    let start = Instant::now();
-    while ipc::send_to_daemon(None)? == Delivery::Delivered {
-        anyhow::ensure!(start.elapsed() < QUIT_TIMEOUT, "the running Yaltri did not quit");
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    Ok(())
+    ipc::quit_daemon(QUIT_TIMEOUT)
 }
 
 /// The old process may hold its executable for a moment after closing its
@@ -91,22 +81,15 @@ fn retry<T>(mut f: impl FnMut() -> Result<T>) -> Result<T> {
     }
 }
 
-/// `yaltri uninstall`: quits Yaltri, removes autostart, the Start menu
-/// shortcut, the Installed apps entry and the program folder, and (if the
-/// user agrees) settings and history.
-pub fn uninstall() -> Result<()> {
-    if let Ok(paths) = Paths::detect()
-        && let Ok(loaded) = yaltri_core::Settings::load(&paths.settings_file())
-    {
-        crate::i18n::set_language(&loaded.settings.general.language);
-    } else {
-        crate::i18n::set_language("auto");
-    }
+/// `yaltri uninstall [--purge]`: quits Yaltri, removes autostart, the Start
+/// menu shortcut, the Installed apps entry and the program folder, and (if
+/// the user agrees, or with `--purge`) settings and history.
+pub fn uninstall(purge: bool) -> Result<()> {
     quit_running()?;
     yaltri_platform::autostart::set_enabled(false)?;
     install::unregister()?;
 
-    if install::ask_yes_no(t("uninstall.title"), t("uninstall.delete_data"))
+    if (purge || install::ask_yes_no(t("uninstall.title"), t("uninstall.delete_data")))
         && let Ok(paths) = Paths::detect()
     {
         // `%APPDATA%\yaltri` and `%LOCALAPPDATA%\yaltri`.

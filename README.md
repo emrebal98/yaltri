@@ -135,7 +135,7 @@ yaltri toggle launcher    # open / close search
 yaltri toggle picker      # open the color picker
 yaltri settings           # open settings
 yaltri quit               # quit
-yaltri uninstall          # uninstall (Windows)
+yaltri uninstall          # uninstall (--purge: settings and history too)
 ```
 
 ### Shortcuts on Linux
@@ -157,12 +157,8 @@ yaltri uninstall          # uninstall (Windows)
 | Settings | `%APPDATA%\yaltri\config\settings.toml` | `~/.config/yaltri/settings.toml` |
 | Index, history, logs | `%LOCALAPPDATA%\yaltri\data` | `~/.local/share/yaltri` |
 
-**To uninstall on Windows:** Settings → Apps → Installed apps → Yaltri → **Uninstall**. It asks whether to delete
-your settings and history too.
-
-**To uninstall on Linux:** turn off **Start with system** in Settings, choose **Quit** from the tray menu, then delete
-`~/.local/bin/yaltri`, both folders above, `~/.local/share/applications/yaltri.desktop` and
-`~/.local/share/icons/hicolor/scalable/apps/yaltri.svg`.
+**To uninstall:** run `yaltri uninstall` (on Windows also Settings → Apps → Installed apps → Yaltri → **Uninstall**).
+It removes everything Yaltri set up and asks whether to delete your settings and history too; `--purge` deletes them without asking.
 
 ---
 
