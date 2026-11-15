@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Bounds, Context, Div, Entity, FontWeight, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
+    ParentElement as _, Pixels, Render, ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _,
     Task, Window, div, img, px,
 };
 use yaltri_apps::games::Launcher;
@@ -29,15 +29,35 @@ const HEIGHT: f32 = 820.;
 const TOAST_FOR: Duration = Duration::from_millis(1960);
 
 pub fn open(cx: &mut App) {
+    open_at(None, cx);
+}
+
+/// Opens settings scrolled to `tool`'s section (the top when `None`).
+pub fn open_at(tool: Option<ToolId>, cx: &mut App) {
     if let Some(handle) = cx.global::<Daemon>().settings_window
         && cx.windows().contains(&handle)
     {
-        let _ = handle.update(cx, |_, window, _| window.activate_window());
+        let _ = handle.update(cx, |root, window, cx| {
+            if let (Some(tool), Ok(view)) = (tool, root.downcast::<SettingsView>()) {
+                view.update(cx, |view, cx| {
+                    view.scroll_to = Some(tool);
+                    cx.notify();
+                });
+            }
+            window.activate_window();
+        });
         return;
     }
 
     let options = ui::frameless_window(t("settings.title").into(), WIDTH, HEIGHT, cx);
-    match gpui_kit::open_window(options, cx, |window, cx| cx.new(|cx| SettingsView::new(window, cx))) {
+    let build = move |window: &mut Window, cx: &mut App| {
+        cx.new(|cx| {
+            let mut view = SettingsView::new(window, cx);
+            view.scroll_to = tool;
+            view
+        })
+    };
+    match gpui_kit::open_window(options, cx, build) {
         Ok((handle, _)) => {
             cx.global_mut::<Daemon>().settings_window = Some(handle);
             let _ = handle.update(cx, |_, window, _| window.activate_window());
@@ -86,6 +106,9 @@ pub struct SettingsView {
     /// (`is_error`, text).
     toast: Option<(bool, SharedString)>,
     update: UpdateState,
+    scroll: ScrollHandle,
+    /// Section to bring to the top on the next render.
+    scroll_to: Option<ToolId>,
     _toast_timer: Option<Task<()>>,
     _refresh: Task<()>,
     _subscriptions: Vec<gpui_kit::Subscription>,
@@ -135,6 +158,8 @@ impl SettingsView {
             toast: None,
             update: UpdateState::Idle,
             _toast_timer: None,
+            scroll: ScrollHandle::new(),
+            scroll_to: None,
             _refresh: refresh,
             _subscriptions: subscriptions,
         }
@@ -932,21 +957,33 @@ impl Render for SettingsView {
                 .child(w)
         });
 
+        // Each section is a header followed by its body; remember where each
+        // tool's header lands among the scroll's children.
+        let first = usize::from(warning.is_some());
+        let mut starts: Vec<(ToolId, usize)> = Vec::new();
         let mut sections: Vec<AnyElement> = Vec::new();
         sections.extend(self.general_section(p, cx));
         if is_implemented(ToolId::Launcher) {
+            starts.push((ToolId::Launcher, first + sections.len()));
             sections.extend(self.launcher_section(p, cx));
         }
         if is_implemented(ToolId::Picker) {
+            starts.push((ToolId::Picker, first + sections.len()));
             sections.extend(self.picker_section(p, cx));
         }
         sections.extend(self.about_section(p, cx));
+        if let Some(tool) = self.scroll_to.take()
+            && let Some(&(_, ix)) = starts.iter().find(|(t, _)| *t == tool)
+        {
+            self.scroll.scroll_to_top_of_item(ix);
+        }
 
         let scroll = div()
             .id("settings-scroll")
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
+            .track_scroll(&self.scroll)
             .px(px(24.))
             .pb(px(24.))
             .flex()
