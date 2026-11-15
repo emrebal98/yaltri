@@ -29,8 +29,6 @@ Looks the same on Windows and Linux (Ubuntu, Arch). A single file: no installer,
 
 > On first launch Windows may warn about an unknown publisher: **More info → Run anyway**.
 
-To start with Windows: `Win+R` → `shell:startup` → put a shortcut to `yaltri.exe` in that folder.
-
 ### Linux
 
 ```sh
@@ -48,14 +46,9 @@ sudo pacman -S libxkbcommon-x11 vulkan-icd-loader                    # Arch
 ```
 
 On GNOME the tray icon needs the AppIndicator extension (preinstalled on Ubuntu).
+Yaltri adds itself to the app menu.
 
-To start on login:
-
-```sh
-mkdir -p ~/.config/autostart
-printf '[Desktop Entry]\nType=Application\nName=Yaltri\nExec=%s\n' "$HOME/.local/bin/yaltri" \
-  > ~/.config/autostart/yaltri.desktop
-```
+Yaltri starts with your system from the first launch on; turn this off under **Settings → General → Start with system**.
 
 ---
 
@@ -86,6 +79,8 @@ for example all your games.
 - **Apps:** Start menu and store apps on Windows, installed desktop apps on Linux.
 - **Files:** Yaltri keeps its own index of file names and finds them instantly, even across millions of files.
   The first scan can take a few minutes; after that it follows changes on its own.
+  On Linux, a home folder with very many folders is rescanned every hour instead of followed live,
+  so Yaltri does not use up the system's file-watch limit that other programs need.
 - **Games:** Steam, Xbox / PC Game Pass, Epic Games, Riot Games, GOG, Ubisoft Connect, EA app;
   Steam, Heroic and Lutris on Linux. Games start through their own launcher.
 - **Math:** Arithmetic, unit conversion and constants. Things you open often move to the top.
@@ -109,14 +104,15 @@ yaltri settings           # open settings
 yaltri quit               # quit
 ```
 
-### Wayland
+### Shortcuts on Linux
 
-Wayland does not let apps register their own global shortcuts. Add one in your desktop settings
-with the command `yaltri toggle launcher`:
-
-- **GNOME:** Settings → Keyboard → Keyboard Shortcuts → Custom Shortcuts
-- **KDE:** System Settings → Shortcuts → Custom Shortcuts
-- **Hyprland:** `bind = SUPER, SPACE, exec, yaltri toggle launcher`
+- **GNOME (X11 and Wayland):** Yaltri adds its shortcuts to GNOME's custom shortcuts by itself and keeps
+  them in sync with Settings. If GNOME already uses the same keys (for example `Super+Space` switches the
+  keyboard layout), Yaltri takes them while it runs and gives them back when you change the shortcut or quit.
+- **Other Wayland desktops** do not let apps register global shortcuts. Add one in your desktop settings
+  with the command `yaltri toggle launcher` (or `yaltri toggle picker`):
+  - **KDE:** System Settings → Shortcuts → Custom Shortcuts
+  - **Hyprland:** `bind = SUPER SHIFT, F, exec, yaltri toggle launcher`
 
 ---
 
@@ -127,7 +123,9 @@ with the command `yaltri toggle launcher`:
 | Settings | `%APPDATA%\yaltri\config\settings.toml` | `~/.config/yaltri/settings.toml` |
 | Index, history, logs | `%LOCALAPPDATA%\yaltri\data` | `~/.local/share/yaltri` |
 
-**To uninstall:** choose **Quit** from the tray menu, then delete the `yaltri` binary and both folders.
+**To uninstall:** turn off **Start with system** in Settings, choose **Quit** from the tray menu, then delete
+the `yaltri` binary and both folders. On Linux also delete `~/.local/share/applications/yaltri.desktop` and
+`~/.local/share/icons/hicolor/scalable/apps/yaltri.svg`.
 
 ---
 
