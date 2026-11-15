@@ -59,18 +59,6 @@ curl -fsSL https://github.com/emrebal98/yaltri/releases/latest/download/install.
 The script puts Yaltri in `~/.local/bin`, starts it, and tells you the exact command if a system library is missing.
 Updates install themselves: see [Updates](#updates).
 
-<details>
-<summary>Manual install</summary>
-
-```sh
-curl -LO https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-linux-x86_64.tar.gz
-tar xzf yaltri-linux-x86_64.tar.gz
-install -Dm755 yaltri-linux-x86_64/yaltri ~/.local/bin/yaltri
-yaltri
-```
-
-</details>
-
 If a library is missing:
 
 ```sh
