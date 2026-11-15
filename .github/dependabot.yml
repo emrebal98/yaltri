@@ -1,0 +1,37 @@
+# Weekly dependency updates, one pull request per ecosystem.
+#
+# Everything is grouped on purpose: PR titles must be Conventional Commits
+# and all lowercase (see scripts/check-commit-title.sh), and a single
+# update's title carries the package name, which can have capitals
+# ("bump Swatinem/rust-cache ..."). Group titles do not
+# ("chore(deps): bump the cargo group with 5 updates").
+# `chore` and `ci` do not make a release on their own (release-please).
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      cargo:
+        patterns: ["*"]
+    ignore:
+      # Pinned exactly in Cargo.toml: GPUI is pre-1.0 and breaks between
+      # snapshots, so it is upgraded by hand. Security updates still come.
+      - dependency-name: gpui-kit
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns: ["*"]
