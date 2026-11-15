@@ -181,5 +181,4 @@ Yaltri is free software: you can use, study, share and change it under the terms
 [GNU General Public License v3.0 or later](LICENSE). If you distribute a modified version, or a program
 built from Yaltri's code, you must share its source under the same license.
 
-Icons from [Lucide](https://lucide.dev) ([ISC](assets/icons/LICENSE)). Releases up to and including 0.1.0
-were published under the MIT License.
+Icons from [Lucide](https://lucide.dev) ([ISC](assets/icons/LICENSE)).

@@ -180,5 +180,4 @@ Yaltri özgür bir yazılımdır: [GNU Genel Kamu Lisansı v3.0 veya sonrası](L
 inceleyebilir, paylaşabilir ve değiştirebilirsin. Değiştirilmiş bir sürümü ya da Yaltri'nin kodundan yapılmış
 bir programı dağıtırsan, kaynak kodunu da aynı lisansla paylaşmak zorundasın.
 
-İkonlar [Lucide](https://lucide.dev)'dan ([ISC](assets/icons/LICENSE)). 0.1.0 dahil önceki sürümler MIT
-Lisansı ile yayınlandı.
+İkonlar [Lucide](https://lucide.dev)'dan ([ISC](assets/icons/LICENSE)).
