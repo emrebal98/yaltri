@@ -79,15 +79,15 @@ jobs:
         run: cargo build --release --locked -p yaltri --target ${{ matrix.target }}
 
       # Version-less names keep `releases/latest/download/<asset>` links stable:
-      # yaltri.exe (Windows) and yaltri-linux-x86_64.tar.gz (Linux). Windows
+      # yaltri-windows-x86_64.exe and yaltri-linux-x86_64.tar.gz. Windows
       # ships the bare executable: run it and it installs itself. GitHub
       # shows each file's SHA-256 (and the API returns it), so no .sha256 files.
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Copy-Item target/${{ matrix.target }}/release/yaltri.exe yaltri.exe
-          "ASSET=yaltri.exe" >> $env:GITHUB_ENV
+          Copy-Item target/${{ matrix.target }}/release/yaltri.exe yaltri-windows-x86_64.exe
+          "ASSET=yaltri-windows-x86_64.exe" >> $env:GITHUB_ENV
 
       - name: Package (Linux)
         if: runner.os == 'Linux'

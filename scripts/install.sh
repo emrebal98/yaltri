@@ -26,7 +26,7 @@ asset_digest() {
     found && /^"name":/ { exit }'
 }
 
-[ "$(uname -s)" = "Linux" ] || fail "this installer is for Linux; on Windows download yaltri.exe from https://github.com/$repo/releases/latest"
+[ "$(uname -s)" = "Linux" ] || fail "this installer is for Linux; on Windows download yaltri-windows-x86_64.exe from https://github.com/$repo/releases/latest"
 case "$(uname -m)" in
   x86_64 | amd64) ;;
   *) fail "no build for $(uname -m) yet (only x86_64)" ;;
