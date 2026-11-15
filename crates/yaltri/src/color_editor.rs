@@ -272,7 +272,7 @@ impl ColorEditor {
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .child(div().ts(15., 20.).font_weight(FontWeight::SEMIBOLD).truncate().child(c.name()))
+                    .child(div().ts(15., 20.).font_weight(FontWeight::SEMIBOLD).truncate().child(crate::i18n::color_name(c)))
                     .child(div().ts(11., 14.).font_family(theme::mono_font()).text_color(p.muted).child(c.to_hex())),
             )
             .child(

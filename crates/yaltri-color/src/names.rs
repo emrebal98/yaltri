@@ -1,10 +1,13 @@
-//! Approximate color names ("Açık mavi") for the picker's color box.
+//! Approximate color names ("light_blue") for the picker's color box.
 //!
 //! Ported from PowerToys' `ColorNameHelper` (MIT License, Copyright (c)
 //! Microsoft Corporation): the same hue tables, bucketed by saturation and
-//! lightness on a 0-255 scale, with Turkish names.
+//! lightness on a 0-255 scale, with keys instead of names.
 
 use crate::Rgb;
+
+/// Every key `Rgb::name_key` returns; the app translates `color.<key>`.
+pub const NAME_KEYS: &[&str] = &["coral", "rose", "light_orange", "tan", "light_yellow", "light_green", "lime", "aqua", "sky_blue", "light_turquoise", "pale_blue", "light_blue", "ice_blue", "periwinkle", "lavender", "pink", "red", "orange", "brown", "gold", "yellow", "olive_green", "green", "bright_green", "teal", "turquoise", "blue", "blue_gray", "indigo", "purple", "dark_red", "dark_yellow", "dark_green", "dark_teal", "dark_blue", "dark_purple", "plum", "white", "black", "light_gray", "gray", "dark_gray"];
 
 const HUE_LIMITS_SAT1: [u16; 23] = [8, 0, 0, 44, 0, 0, 0, 63, 0, 0, 122, 0, 134, 0, 0, 0, 0, 166, 176, 241, 0, 256, 0];
 const HUE_LIMITS_SAT2: [u16; 23] = [0, 10, 0, 32, 46, 0, 0, 0, 61, 0, 106, 0, 136, 144, 0, 0, 0, 158, 166, 241, 0, 0, 256];
@@ -16,43 +19,44 @@ const LUM_LOW: [u16; 23] = [130, 100, 115, 100, 100, 100, 110, 75, 100, 90, 100,
 const LUM_HIGH: [u16; 23] = [170, 170, 170, 155, 170, 170, 170, 170, 170, 115, 170, 170, 170, 170, 170, 170, 170, 170, 150, 150, 170, 140, 165];
 
 const LIGHT: [&str; 23] = [
-    "Mercan", "Gül", "Açık turuncu", "Ten rengi", "Ten rengi", "Açık sarı", "Açık sarı", "Ten rengi",
-    "Açık yeşil", "Limon yeşili", "Açık yeşil", "Açık yeşil", "Su yeşili", "Gök mavisi", "Açık turkuaz",
-    "Soluk mavi", "Açık mavi", "Buz mavisi", "Lavanta mavisi", "Lavanta", "Pembe", "Ten rengi", "Gül",
+    "coral", "rose", "light_orange", "tan", "tan", "light_yellow", "light_yellow", "tan",
+    "light_green", "lime", "light_green", "light_green", "aqua", "sky_blue", "light_turquoise",
+    "pale_blue", "light_blue", "ice_blue", "periwinkle", "lavender", "pink", "tan", "rose",
 ];
 const MID: [&str; 23] = [
-    "Mercan", "Kırmızı", "Turuncu", "Kahverengi", "Ten rengi", "Altın", "Sarı", "Zeytin yeşili",
-    "Zeytin yeşili", "Yeşil", "Yeşil", "Parlak yeşil", "Petrol mavisi", "Su yeşili", "Turkuaz",
-    "Soluk mavi", "Mavi", "Mavi gri", "Çivit", "Mor", "Pembe", "Kahverengi", "Kırmızı",
+    "coral", "red", "orange", "brown", "tan", "gold", "yellow", "olive_green",
+    "olive_green", "green", "green", "bright_green", "teal", "aqua", "turquoise",
+    "pale_blue", "blue", "blue_gray", "indigo", "purple", "pink", "brown", "red",
 ];
 const DARK: [&str; 23] = [
-    "Kahverengi", "Koyu kırmızı", "Kahverengi", "Kahverengi", "Kahverengi", "Koyu sarı", "Koyu sarı",
-    "Kahverengi", "Koyu yeşil", "Koyu yeşil", "Koyu yeşil", "Koyu yeşil", "Koyu petrol", "Koyu petrol",
-    "Koyu petrol", "Koyu mavi", "Koyu mavi", "Mavi gri", "Çivit", "Koyu mor", "Erik moru", "Kahverengi",
-    "Koyu kırmızı",
+    "brown", "dark_red", "brown", "brown", "brown", "dark_yellow", "dark_yellow",
+    "brown", "dark_green", "dark_green", "dark_green", "dark_green", "dark_teal", "dark_teal",
+    "dark_teal", "dark_blue", "dark_blue", "blue_gray", "indigo", "dark_purple", "plum", "brown",
+    "dark_red",
 ];
 
 impl Rgb {
-    /// A short, human name for the color, as PowerToys shows under the code.
-    pub fn name(self) -> &'static str {
+    /// Key of a short, human name for the color, as PowerToys shows under
+    /// the code: `light_blue` for "Light blue".
+    pub fn name_key(self) -> &'static str {
         let (h, s, l) = self.to_hsl();
         let hue = h / 360. * 255.;
         let sat = s * 255.;
         let lum = l * 255.;
 
         if lum > 240. {
-            return "Beyaz";
+            return "white";
         }
         if lum < 20. {
-            return "Siyah";
+            return "black";
         }
         if sat <= 20. {
             return if lum > 170. {
-                "Açık gri"
+                "light_gray"
             } else if lum > 100. {
-                "Gri"
+                "gray"
             } else {
-                "Koyu gri"
+                "dark_gray"
             };
         }
         let limits = if sat <= 75. {
@@ -84,34 +88,34 @@ mod tests {
     use super::*;
 
     fn name(hex: &str) -> &'static str {
-        Rgb::from_hex(hex).unwrap().name()
+        Rgb::from_hex(hex).unwrap().name_key()
     }
 
     #[test]
     fn matches_powertoys_examples() {
-        // PowerToys shows "Light blue" for this one.
-        assert_eq!(name("#89b4fa"), "Açık mavi");
-        assert_eq!(name("#ffffff"), "Beyaz");
-        assert_eq!(name("#000000"), "Siyah");
-        assert_eq!(name("#808080"), "Gri");
+                assert_eq!(name("#89b4fa"), "light_blue");
+        assert_eq!(name("#ffffff"), "white");
+        assert_eq!(name("#000000"), "black");
+        assert_eq!(name("#808080"), "gray");
     }
 
     #[test]
     fn primary_colors_are_named_sensibly() {
-        assert_eq!(name("#ff0000"), "Kırmızı");
-        assert_eq!(name("#00ff00"), "Yeşil");
-        assert_eq!(name("#00a000"), "Koyu yeşil"); // PowerToys: "Dark green"
-        assert_eq!(name("#0000ff"), "Mavi");
-        assert_eq!(name("#ffff00"), "Sarı");
-        assert_eq!(name("#ff8000"), "Turuncu");
+        assert_eq!(name("#ff0000"), "red");
+        assert_eq!(name("#00ff00"), "green");
+        assert_eq!(name("#00a000"), "dark_green");
+        assert_eq!(name("#0000ff"), "blue");
+        assert_eq!(name("#ffff00"), "yellow");
+        assert_eq!(name("#ff8000"), "orange");
     }
 
     #[test]
-    fn every_color_gets_a_name() {
+    fn every_color_gets_a_known_key() {
         for r in (0..=255).step_by(17) {
             for g in (0..=255).step_by(17) {
                 for b in (0..=255).step_by(17) {
-                    assert!(!Rgb::new(r, g, b).name().is_empty(), "{r},{g},{b}");
+                    let key = Rgb::new(r, g, b).name_key();
+                    assert!(NAME_KEYS.contains(&key), "{r},{g},{b}: {key:?}");
                 }
             }
         }
