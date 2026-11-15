@@ -1,15 +1,22 @@
 name: CI
 
-# Pull requests only: a merged PR was already checked, so pushes to main
-# (which only happen through merges) do not run it again.
+# Pull requests are checked here. Pushes to main (merges) run it too, to
+# keep main's build cache warm: a pull request can only restore caches
+# saved on its own ref or on main, so without main's cache every pull
+# request compiled everything from scratch (~40 min on Linux).
 on:
   pull_request:
     paths-ignore: ["**.md", "LICENSE"]
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "LICENSE"]
   workflow_dispatch:
 
+# A newer push to a pull request replaces its running check; runs on main
+# finish, so each merge leaves a saved cache.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -43,7 +50,11 @@ jobs:
         with:
           components: clippy
 
+      # Only main saves (pull requests restore main's): each saved cache is
+      # 1-1.5 GB, and per-PR copies filled the repo's 10 GB cache quota.
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked
