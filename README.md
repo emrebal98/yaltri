@@ -59,13 +59,6 @@ curl -fsSL https://github.com/emrebal98/yaltri/releases/latest/download/install.
 The script puts Yaltri in `~/.local/bin`, starts it, and tells you the exact command if a system library is missing.
 Updates install themselves: see [Updates](#updates).
 
-If a library is missing:
-
-```sh
-sudo apt install libxkbcommon-x11-0 libvulkan1 mesa-vulkan-drivers   # Ubuntu
-sudo pacman -S libxkbcommon-x11 vulkan-icd-loader                    # Arch
-```
-
 On GNOME the tray icon needs the AppIndicator extension (preinstalled on Ubuntu).
 Yaltri adds itself to the app menu.
 
