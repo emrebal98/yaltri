@@ -11,10 +11,11 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, Window, anchored, deferred, div, point, px, rgb,
 };
 use yaltri_color::{Format, Rgb};
+use yaltri_core::ToolId;
 
 use crate::daemon::Daemon;
 use crate::i18n::{t, tf};
-use crate::picker;
+use crate::{picker, settings_view};
 use crate::theme::{self, Palette, R_MD, R_SM, R_XS};
 use crate::ui::{self, ButtonKind, TextStyle as _};
 
@@ -517,6 +518,35 @@ impl ColorEditor {
     }
 }
 
+impl ColorEditor {
+    /// Footer hint; the word "Settings" in it opens settings at the picker section.
+    fn hint(p: &Palette) -> impl IntoElement {
+        let text = t("editor.hint");
+        let (before, after) = text.split_once("{settings}").unwrap_or((text, ""));
+        let link = div()
+            .id("editor-hint-settings")
+            .flex_none()
+            .cursor_pointer()
+            .text_color(p.foreground)
+            .border_b_1()
+            .border_color(p.border_strong)
+            .hover(|d| d.text_color(p.accent_strong))
+            .child(t("editor.hint_settings"))
+            .on_click(|_, _, cx| settings_view::open_at(Some(ToolId::Picker), cx));
+        div()
+            .flex()
+            .items_center()
+            .min_w_0()
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .ts(11., 14.)
+            .text_color(p.muted)
+            .child(before)
+            .when(text.contains("{settings}"), |d| d.child(link))
+            .child(after)
+    }
+}
+
 impl Render for ColorEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = theme::of(window);
@@ -543,7 +573,7 @@ impl Render for ColorEditor {
             .child(self.shade_bar(p, cx))
             .child(self.format_rows(default_format, p, cx))
             .child(div().flex_1())
-            .child(div().ts(11., 14.).text_color(p.muted).truncate().child(t("editor.hint")));
+            .child(Self::hint(p));
         let toast = self.toast.as_ref().and_then(|toast| self.toast_view(toast, p, window));
         let main = main.children(toast);
 

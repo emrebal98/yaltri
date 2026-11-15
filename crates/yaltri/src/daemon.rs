@@ -7,7 +7,7 @@ use std::time::Duration;
 use anyhow::Result;
 use futures::StreamExt as _;
 use futures::channel::mpsc;
-use gpui_kit::{AnyWindowHandle, App, Entity, Global, QuitMode};
+use gpui_kit::{AnyWindowHandle, App, Entity, Global, QuitMode, WeakEntity};
 use yaltri_apps::AppsProvider;
 use yaltri_calc::CalcProvider;
 use yaltri_color::{ColorHistory, Rgb};
@@ -32,7 +32,8 @@ pub struct Daemon {
     pub providers: Arc<Vec<Box<dyn SearchProvider>>>,
     pub history: Arc<Mutex<History>>,
     pub launcher_window: Option<AnyWindowHandle>,
-    pub settings_window: Option<AnyWindowHandle>,
+    /// The settings window and its view (the window's root is a wrapper).
+    pub settings_window: Option<(AnyWindowHandle, WeakEntity<crate::settings_view::SettingsView>)>,
     /// One overlay per display while picking a color.
     pub picker_windows: Vec<AnyWindowHandle>,
     pub colors: ColorHistory,
