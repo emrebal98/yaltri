@@ -20,6 +20,26 @@ Looks the same on Windows and Linux (Ubuntu, Arch). A single small program, no a
 
 ---
 
+## Tools
+
+### 🔎 Search · `Super+Shift+F`
+
+Apps, files and games in one box, with a calculator built in: `2^10`, `5 km to mi`, `=pi`.
+Results appear as you type; `Enter` opens the result or copies the answer.
+
+<p align="center"><img src="docs/media/launcher.gif" width="680" alt="The Yaltri search box: 2^10 gives 1024, and /a note lists Notepad, Sticky Notes and OneNote"></p>
+
+### 🎨 Color picker · `Super+Shift+C`
+
+Grab a color from anywhere on screen, zoom in with the mouse wheel to hit the exact pixel,
+and copy it as HEX, RGB, HSL, OKLCH or five other formats.
+
+<p align="center"><img src="docs/media/color-picker.gif" width="720" alt="Picking colors: the code and name follow the cursor, the mouse wheel opens a magnifier on a tile corner, and a click opens the editor with nine formats and the history"></p>
+
+Each tool can be switched off in **Settings**.
+
+---
+
 ## Installation
 
 ### Windows
