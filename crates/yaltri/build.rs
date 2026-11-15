@@ -5,6 +5,9 @@
 
 use std::path::PathBuf;
 
+// The tiny-skia that resvg renders with, so the two can never drift apart.
+use resvg::tiny_skia;
+
 const SIZES: [u32; 8] = [16, 20, 24, 32, 40, 48, 64, 256];
 
 fn main() {
