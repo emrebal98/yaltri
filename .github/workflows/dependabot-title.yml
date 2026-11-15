@@ -1,0 +1,60 @@
+name: Dependabot title
+
+# Dependabot writes "chore(deps): Bump the cargo group ..." and has no
+# setting for that capital, while the title lint wants all lowercase.
+# This lowercases the title of Dependabot's pull requests, then re-runs
+# the title lint, which reads the current title. (An edit made with this
+# workflow's token does not start other workflows by itself.)
+#
+# pull_request_target runs this file from main with a token that may edit
+# the PR. It never checks out or runs the pull request's code.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+
+permissions: {}
+
+jobs:
+  lowercase:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Lowercase the title
+        id: title
+        run: |
+          title=$(gh api "repos/$GH_REPO/pulls/$PR" --jq .title)
+          lower=$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]')
+          if [ "$lower" = "$title" ]; then
+            echo "already lowercase: $title"
+            exit 0
+          fi
+          gh pr edit "$PR" --title "$lower"
+          echo "renamed: $title -> $lower"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Re-run the title lint
+        if: steps.title.outputs.changed == 'true'
+        run: |
+          # The lint for this commit may still be running; wait for it.
+          for _ in $(seq 1 30); do
+            run=$(gh run list --workflow pr-lint.yml --commit "$SHA" --limit 1 --json databaseId,status,conclusion \
+              --jq '.[0] | "\(.databaseId) \(.status) \(.conclusion)"')
+            set -- $run
+            if [ "${2:-}" = "completed" ]; then
+              if [ "${3:-}" != "success" ]; then
+                gh run rerun "$1"
+                echo "re-ran PR lint run $1"
+              fi
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "PR lint did not finish in time; it will pass on the next push"
