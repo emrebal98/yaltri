@@ -20,7 +20,7 @@ yaltri-color = { path = "crates/yaltri-color" }
 gpui-kit = "=0.9.1"
 
 anyhow = "1"
-ashpd = { version = "0.13", default-features = false, features = ["async-io", "screenshot", "global_shortcuts"] }
+ashpd = { version = "0.14", default-features = false, features = ["async-io", "screenshot", "global_shortcuts"] }
 directories = "6"
 fend-core = "1.5"
 futures = "0.3"
