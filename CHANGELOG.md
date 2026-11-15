@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/emrebal98/yaltri/compare/v0.2.0...v0.3.0) (2026-11-15)
+
+
+### Features
+
+* **update:** download updates in the background and install them in one click ([#25](https://github.com/emrebal98/yaltri/issues/25)) ([68e38c6](https://github.com/emrebal98/yaltri/commit/68e38c6683122ad534a2adef7eab70415ae426df))
+
 ## [0.2.0](https://github.com/emrebal98/yaltri/compare/v0.1.0...v0.2.0) (2026-11-15)
 
 
