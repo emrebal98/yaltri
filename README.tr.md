@@ -11,7 +11,7 @@ aradığını bulur, işin bitince kaybolur.
 - **Hesapla:** `2^10`, `5 km to mi`, `=pi`. Sonuç Enter ile panoya kopyalanır.
 - **Renk seç:** Ekranın herhangi bir yerinden renk al, istediğin formatta kopyala.
 
-Windows ve Linux'ta (Ubuntu, Arch) aynı görünür. Tek dosyadır, kurulum gerektirmez, internete bağlanmaz.
+Windows ve Linux'ta (Ubuntu, Arch) aynı görünür. Tek küçük bir programdır, yönetici izni istemez; internete yalnızca güncelleme denetlerken bağlanır.
 
 [![Release](https://img.shields.io/github/v/release/emrebal98/yaltri?include_prereleases)](https://github.com/emrebal98/yaltri/releases)
 [![CI](https://github.com/emrebal98/yaltri/actions/workflows/ci.yml/badge.svg)](https://github.com/emrebal98/yaltri/actions/workflows/ci.yml)
@@ -23,13 +23,23 @@ Windows ve Linux'ta (Ubuntu, Arch) aynı görünür. Tek dosyadır, kurulum gere
 
 ### Windows
 
-1. [**yaltri-x86_64-pc-windows-msvc.zip**](https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-x86_64-pc-windows-msvc.zip) dosyasını indir.
-2. İstediğin bir klasöre çıkar.
-3. `yaltri.exe`'yi çalıştır. Tepsi ikonu belirir.
+[**yaltri.exe**](https://github.com/emrebal98/yaltri/releases/latest/download/yaltri.exe) dosyasını indir ve çalıştır.
+Bu kadar: Yaltri kendini kullanıcın için kurar (yönetici izni gerekmez), Başlat menüsüne eklenir ve tepside belirir.
+Güncellemek için yeni `yaltri.exe`'yi aynı şekilde indirip çalıştır.
 
 > İlk açılışta Windows "bilinmeyen yayıncı" uyarısı gösterebilir: **Ek bilgi → Yine de çalıştır**.
 
 ### Linux
+
+```sh
+curl -fsSL https://github.com/emrebal98/yaltri/releases/latest/download/install.sh | sh
+```
+
+Script Yaltri'yi `~/.local/bin` içine koyar, başlatır ve eksik bir sistem kütüphanesi varsa kurulum komutunu söyler.
+Güncellemek için tekrar çalıştır.
+
+<details>
+<summary>Elle kurulum</summary>
 
 ```sh
 curl -LO https://github.com/emrebal98/yaltri/releases/latest/download/yaltri-x86_64-unknown-linux-gnu.tar.gz
@@ -37,6 +47,8 @@ tar xzf yaltri-x86_64-unknown-linux-gnu.tar.gz
 install -Dm755 yaltri-x86_64-unknown-linux-gnu/yaltri ~/.local/bin/yaltri
 yaltri
 ```
+
+</details>
 
 Eksik kütüphane hatası alırsan:
 
@@ -101,6 +113,7 @@ yaltri toggle launcher    # arama kutusunu aç / kapat
 yaltri toggle picker      # renk seçiciyi aç
 yaltri settings           # ayarları aç
 yaltri quit               # kapat
+yaltri uninstall          # kaldır (Windows)
 ```
 
 ### Linux'ta kısayollar
@@ -122,9 +135,12 @@ yaltri quit               # kapat
 | Ayarlar | `%APPDATA%\yaltri\config\settings.toml` | `~/.config/yaltri/settings.toml` |
 | Index, geçmiş, loglar | `%LOCALAPPDATA%\yaltri\data` | `~/.local/share/yaltri` |
 
-**Kaldırmak için:** Ayarlar'da **Sistem açılışında başlat**'ı kapat, tepsi menüsünden **Çıkış**'a bas, sonra
-`yaltri` dosyasını ve bu iki klasörü sil. Linux'ta ayrıca `~/.local/share/applications/yaltri.desktop` ve
-`~/.local/share/icons/hicolor/scalable/apps/yaltri.svg` dosyalarını da sil.
+**Windows'ta kaldırmak için:** Ayarlar → Uygulamalar → Yüklü uygulamalar → Yaltri → **Kaldır**. Ayarların ve
+geçmişin de silinsin mi diye sorar.
+
+**Linux'ta kaldırmak için:** Ayarlar'da **Sistem açılışında başlat**'ı kapat, tepsi menüsünden **Çıkış**'a bas, sonra
+`~/.local/bin/yaltri` dosyasını, yukarıdaki iki klasörü, `~/.local/share/applications/yaltri.desktop` ve
+`~/.local/share/icons/hicolor/scalable/apps/yaltri.svg` dosyalarını sil.
 
 ---
 
@@ -214,4 +230,4 @@ Yayınlamadan derlemeyi denemek için: **Actions → Release → Run workflow**.
 
 ## Lisans
 
-[MIT](LICENSE)
+[MIT](LICENSE). İkonlar [Lucide](https://lucide.dev)'dan ([ISC](assets/icons/LICENSE)).

@@ -144,3 +144,5 @@
 "settings.general.autostart" = "Sistem açılışında başlat"
 "settings.general.autostart_hint" = "Yaltri oturum açınca tepside sessizce çalışır"
 "settings.general.autostart_failed" = "Başlangıç kaydı değiştirilemedi: {error}"
+"uninstall.title" = "Yaltri'yi kaldır"
+"uninstall.delete_data" = "Yaltri'nin ayarları, arama geçmişi ve kayıtlı renkleri de silinsin mi?"
