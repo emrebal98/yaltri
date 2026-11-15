@@ -134,7 +134,7 @@ yaltri toggle launcher    # arama kutusunu aç / kapat
 yaltri toggle picker      # renk seçiciyi aç
 yaltri settings           # ayarları aç
 yaltri quit               # kapat
-yaltri uninstall          # kaldır (Windows)
+yaltri uninstall          # kaldır (--purge: ayarlar ve geçmiş de)
 ```
 
 ### Linux'ta kısayollar
@@ -156,12 +156,8 @@ yaltri uninstall          # kaldır (Windows)
 | Ayarlar | `%APPDATA%\yaltri\config\settings.toml` | `~/.config/yaltri/settings.toml` |
 | Index, geçmiş, loglar | `%LOCALAPPDATA%\yaltri\data` | `~/.local/share/yaltri` |
 
-**Windows'ta kaldırmak için:** Ayarlar → Uygulamalar → Yüklü uygulamalar → Yaltri → **Kaldır**. Ayarların ve
-geçmişin de silinsin mi diye sorar.
-
-**Linux'ta kaldırmak için:** Ayarlar'da **Sistem açılışında başlat**'ı kapat, tepsi menüsünden **Çıkış**'a bas, sonra
-`~/.local/bin/yaltri` dosyasını, yukarıdaki iki klasörü, `~/.local/share/applications/yaltri.desktop` ve
-`~/.local/share/icons/hicolor/scalable/apps/yaltri.svg` dosyalarını sil.
+**Kaldırmak için:** `yaltri uninstall` çalıştır (Windows'ta Ayarlar → Uygulamalar → Yüklü uygulamalar → Yaltri → **Kaldır** da olur).
+Yaltri'nin kurduğu her şeyi siler ve ayarların ile geçmişin de silinsin mi diye sorar; `--purge` sormadan siler.
 
 ---
 

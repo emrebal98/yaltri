@@ -32,6 +32,12 @@ pub fn install_app_entry(icon_svg: &str) -> Result<()> {
     imp::install_app_entry(&exe, icon_svg)
 }
 
+/// Linux: removes what `install_app_entry` wrote (application entry, icon).
+#[cfg(not(windows))]
+pub fn remove_app_entry() -> Result<()> {
+    imp::remove_app_entry()
+}
+
 #[cfg(windows)]
 mod imp {
     use std::path::Path;
@@ -185,6 +191,19 @@ mod imp {
         write_if_changed(&data.join("applications/yaltri.desktop"), entry.as_bytes())?;
         if is_enabled() {
             set_enabled(true, exe)?;
+        }
+        Ok(())
+    }
+
+    pub fn remove_app_entry() -> Result<()> {
+        let data = data_home().context("no home directory")?;
+        for path in [data.join("applications/yaltri.desktop"), icon_file().context("no home directory")?] {
+            match std::fs::remove_file(&path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(e).with_context(|| format!("removing {}", path.display()));
+                }
+                _ => {}
+            }
         }
         Ok(())
     }

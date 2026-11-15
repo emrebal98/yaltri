@@ -111,3 +111,4 @@ if [ -z "$missing" ] && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]
   say ""
   say "Yaltri is running in the tray. Search: Super+Shift+F · Color picker: Super+Shift+C"
 fi
+say "To uninstall later: $bin uninstall"

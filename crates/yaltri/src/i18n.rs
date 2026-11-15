@@ -34,6 +34,16 @@ pub fn set_language(setting: &str) {
     }
 }
 
+/// Uses the language from the saved settings (for commands that run without
+/// the app, such as `uninstall`); the system's when there are none.
+pub fn use_saved_language() {
+    let saved = yaltri_core::paths::Paths::detect()
+        .ok()
+        .and_then(|paths| yaltri_core::Settings::load(&paths.settings_file()).ok())
+        .map(|loaded| loaded.settings.general.language);
+    set_language(saved.as_deref().unwrap_or("auto"));
+}
+
 /// The system UI language as a two-letter code ("tr-TR" -> "tr").
 fn system_language() -> String {
     sys_locale::get_locale()
