@@ -1,10 +1,12 @@
-# Weekly dependency updates, one pull request per ecosystem.
+# Weekly dependency updates.
 #
-# Everything is grouped on purpose: PR titles must be Conventional Commits
-# and all lowercase (see scripts/check-commit-title.sh), and a single
-# update's title carries the package name, which can have capitals
-# ("bump Swatinem/rust-cache ..."). Group titles do not
-# ("chore(deps): bump the cargo group with 5 updates").
+# Cargo: compatible (patch) updates come together in one pull request;
+# every other update gets its own, so CI shows exactly which crate breaks
+# the build. For 0.x crates (most of ours) a minor bump such as 0.13 ->
+# 0.14 is a breaking change in Cargo's semver.
+#
+# PR titles must be Conventional Commits in lowercase; Dependabot writes
+# "Bump", and dependabot-title.yml lowercases it.
 # `chore` and `ci` do not make a release on their own (release-please).
 version: 2
 updates:
@@ -12,13 +14,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 6
     commit-message:
       prefix: chore
       include: scope
     groups:
-      cargo:
-        patterns: ["*"]
+      cargo-patch:
+        update-types: ["patch"]
     ignore:
       # Pinned exactly in Cargo.toml: GPUI is pre-1.0 and breaks between
       # snapshots, so it is upgraded by hand. Security updates still come.
