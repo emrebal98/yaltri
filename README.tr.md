@@ -10,7 +10,7 @@
 <p align="center">
   <a href="https://github.com/emrebal98/yaltri/releases"><img src="https://img.shields.io/github/v/release/emrebal98/yaltri?include_prereleases" alt="Release"></a>
   <a href="https://github.com/emrebal98/yaltri/actions/workflows/ci.yml"><img src="https://github.com/emrebal98/yaltri/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License: GPL-3.0"></a>
 </p>
 
 <p align="center"><a href="README.md">English</a> · <b>Türkçe</b></p>
@@ -174,4 +174,11 @@ Ortam kurulumu, sık kullanılan komutlar, proje yapısı, commit kuralları ve 
 
 ## Lisans
 
-[MIT](LICENSE). İkonlar [Lucide](https://lucide.dev)'dan ([ISC](assets/icons/LICENSE)).
+Copyright (C) 2026 Yaltri katkıcıları.
+
+Yaltri özgür bir yazılımdır: [GNU Genel Kamu Lisansı v3.0 veya sonrası](LICENSE) şartlarıyla kullanabilir,
+inceleyebilir, paylaşabilir ve değiştirebilirsin. Değiştirilmiş bir sürümü ya da Yaltri'nin kodundan yapılmış
+bir programı dağıtırsan, kaynak kodunu da aynı lisansla paylaşmak zorundasın.
+
+İkonlar [Lucide](https://lucide.dev)'dan ([ISC](assets/icons/LICENSE)). 0.1.0 dahil önceki sürümler MIT
+Lisansı ile yayınlandı.

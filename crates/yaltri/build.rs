@@ -104,7 +104,7 @@ BEGIN
       VALUE "FileDescription", "Yaltri"
       VALUE "FileVersion", "{version}"
       VALUE "InternalName", "yaltri"
-      VALUE "LegalCopyright", "MIT License"
+      VALUE "LegalCopyright", "Copyright (C) 2026 Yaltri contributors. GPL-3.0-or-later"
       VALUE "OriginalFilename", "yaltri.exe"
       VALUE "ProductName", "Yaltri"
       VALUE "ProductVersion", "{version}"
