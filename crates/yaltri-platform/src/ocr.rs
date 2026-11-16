@@ -79,7 +79,9 @@ fn tidy(text: &str) -> String {
 
 #[cfg(windows)]
 mod win {
+    use windows::Globalization::Language;
     use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
+    use windows::System::UserProfile::GlobalizationPreferences;
     use windows::Media::Ocr::OcrEngine;
     use windows::Security::Cryptography::CryptographicBuffer;
     use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
@@ -91,18 +93,54 @@ mod win {
         // SAFETY: initialises WinRT for this (background) thread; a thread
         // already initialised just gets an "already" result.
         let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
-        let engine = OcrEngine::TryCreateFromUserProfileLanguages().map_err(|_| OcrError::NoLanguage)?;
+        let engines = engines();
+        if engines.is_empty() {
+            return Err(OcrError::NoLanguage);
+        }
         let max = OcrEngine::MaxImageDimension().unwrap_or(10_000);
         let factor = super::upscale_factor(height).min((max / width.max(1)).max(1)).min((max / height.max(1)).max(1));
         let (w, h, pixels) = super::upscale(width, height, bgra, factor);
         let buffer = CryptographicBuffer::CreateFromByteArray(&pixels).map_err(fail)?;
         let bitmap =
             SoftwareBitmap::CreateCopyFromBuffer(&buffer, BitmapPixelFormat::Bgra8, w as i32, h as i32).map_err(fail)?;
-        let result = engine.RecognizeAsync(&bitmap).map_err(fail)?.join().map_err(fail)?;
-        let lines = result.Lines().map_err(fail)?;
+        // One engine reads one language; the cleanest reading wins (ties go
+        // to the user's first language).
+        let mut best: Option<(i32, String)> = None;
+        for engine in engines {
+            let text = read(&engine, &bitmap).map_err(fail)?;
+            let score = super::text_score(&text);
+            if best.as_ref().is_none_or(|(s, _)| score > *s) {
+                best = Some((score, text));
+            }
+        }
+        Ok(best.map(|(_, t)| t).unwrap_or_default())
+    }
+
+    /// An engine for each OCR language among the user's languages, in their
+    /// order; the default engine when none of them has one.
+    fn engines() -> Vec<OcrEngine> {
+        let mut out = Vec::new();
+        if let Ok(tags) = GlobalizationPreferences::Languages() {
+            for tag in tags {
+                let Ok(language) = Language::CreateLanguage(&tag) else { continue };
+                if OcrEngine::IsLanguageSupported(&language).unwrap_or(false)
+                    && let Ok(engine) = OcrEngine::TryCreateFromLanguage(&language)
+                {
+                    out.push(engine);
+                }
+            }
+        }
+        if out.is_empty() {
+            out.extend(OcrEngine::TryCreateFromUserProfileLanguages().ok());
+        }
+        out
+    }
+
+    fn read(engine: &OcrEngine, bitmap: &SoftwareBitmap) -> windows::core::Result<String> {
+        let result = engine.RecognizeAsync(bitmap)?.join()?;
         let mut text = Vec::new();
-        for i in 0..lines.Size().map_err(fail)? {
-            text.push(lines.GetAt(i).and_then(|l| l.Text()).map_err(fail)?.to_string());
+        for line in result.Lines()? {
+            text.push(line.Text()?.to_string());
         }
         Ok(super::tidy(&text.join("\n")))
     }
@@ -136,6 +174,19 @@ mod linux {
     }
 }
 
+/// How clean a reading looks: letters and digits count, stray symbols that
+/// misread letters turn into (`$`, `|`, `§`…) count against.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn text_score(text: &str) -> i32 {
+    text.chars()
+        .map(|c| match c {
+            c if c.is_alphanumeric() => 1,
+            '$' | '|' | '§' | '¢' | '£' | '¥' | '©' | '®' | '°' | '¦' | '~' | '^' | '`' | '\\' => -3,
+            _ => 0,
+        })
+        .sum()
+}
+
 /// `tur+eng` from what `tesseract --list-langs` prints, keeping what is
 /// installed; English alone when neither is.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -165,6 +216,13 @@ mod tests {
         assert_eq!((w, h), (4, 2));
         let row = [[1u8; 4], [1; 4], [2; 4], [2; 4]].concat();
         assert_eq!(px, [row.clone(), row].concat());
+    }
+
+    #[test]
+    fn prefers_the_reading_without_stray_symbols() {
+        // What an English engine made of Turkish text vs the Turkish engine.
+        assert!(text_score("İkinci satır: çğşıöü") > text_score("ikinci satir: q$löü"));
+        assert_eq!(text_score("ab 12"), 4);
     }
 
     #[test]
