@@ -121,6 +121,9 @@ Yazarken filtrelemek için başa kısaltma ve boşluk yaz: `/u ` uygulama, `/d `
 - Üstteki çubuk **Alan** (sürükle), **Pencere** (birine tıkla) ve **Ekran** arasında geçer. Tuşlar: `R`, `W`, `F`.
 - Seçimin altında: **Kopyala** (`Enter`, `Ctrl+C`) ve **Kaydet** (`Ctrl+S`, ayrıca kopyalar).
   `Esc` ya da sağ tık iptal eder.
+- Kopyalamadan önce seçimin üstüne çiz: ok, kutu, kalem, vurgulayıcı, metin, numaralı rozet ve pikselleştirme;
+  altı renk, üç kalınlık. `Shift` ile ok düz, kutu kare olur; `Ctrl+Z` geri alır.
+  Yeni alan seçmek için aktif araca tekrar tıklayıp bırak.
 - Dosyalar **Ayarlar → Ekran görüntüsü**'nden başka klasör seçilmedikçe `Resimler/Screenshots`'a kaydedilir.
 - GNOME, Yaltri'nin ekran görüntüsü alıp alamayacağını bir kez sorar. Wayland'da **Pencere** modu yok,
   çünkü uygulamalar diğer pencerelerin yerini göremez. KDE, Hyprland ve diğer Wayland masaüstleri kendi

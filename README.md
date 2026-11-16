@@ -122,6 +122,9 @@ for example all your games.
 - The bar at the top switches between **Area** (drag), **Window** (click one) and **Screen**. Keys: `R`, `W`, `F`.
 - Under the selection: **Copy** (`Enter`, `Ctrl+C`) and **Save** (`Ctrl+S`), which also copies.
   `Esc` or right click cancels.
+- Draw on the selection before copying: arrow, box, pen, highlighter, text, numbered badges and pixelate,
+  in six colours and three widths. Hold `Shift` for straight arrows and square boxes; `Ctrl+Z` undoes.
+  Click the active tool again to put it down and select a new area.
 - Files go to `Pictures/Screenshots` unless you pick another folder in **Settings → Screenshot**.
 - GNOME asks once whether Yaltri may take screenshots. On Wayland the **Window** mode is not available,
   since apps can't see where other windows are. KDE, Hyprland and other Wayland desktops show their
