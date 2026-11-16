@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/emrebal98/yaltri/compare/v0.3.1...v0.3.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **ipc:** don't fail a quit when the daemon drops our ping ([#40](https://github.com/emrebal98/yaltri/issues/40)) ([af67cca](https://github.com/emrebal98/yaltri/commit/af67ccadd117d3dc3758a05f0a9cdf0502f6b17e))
+
 ## [0.3.1](https://github.com/emrebal98/yaltri/compare/v0.3.0...v0.3.1) (2026-11-16)
 
 
