@@ -19,9 +19,10 @@ pub fn toggle_focused() -> Result<()> {
     anyhow::bail!("always on top is not supported on this system")
 }
 
-/// Desktop windows a pin makes no sense on: the wallpaper and taskbars.
+/// Desktop windows a pin or a window screenshot makes no sense on: the
+/// wallpaper and taskbars.
 #[cfg_attr(not(windows), allow(dead_code))]
-fn is_shell_class(class: &str) -> bool {
+pub(crate) fn is_shell_class(class: &str) -> bool {
     matches!(class, "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd")
 }
 

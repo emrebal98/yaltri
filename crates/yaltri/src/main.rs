@@ -12,6 +12,8 @@ mod uninstall_linux;
 mod launcher;
 mod picker;
 mod picker_zoom;
+mod shot;
+mod shot_output;
 mod settings_view;
 mod shortcut_input;
 mod theme;
@@ -34,6 +36,7 @@ komutlar:
   toggle launcher    arama penceresini aç/kapat
   toggle picker      renk seçiciyi aç/kapat
   toggle pin         öndeki pencereyi üstte tut / bırak
+  toggle shot        ekran görüntüsü al
   settings           ayarlar penceresini aç
   quit               çalışan yaltri'yi kapat
   update             indirilen güncellemeyi kur ve yeniden başlat (yoksa denetle)

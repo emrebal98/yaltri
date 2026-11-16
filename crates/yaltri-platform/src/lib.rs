@@ -8,6 +8,8 @@ pub mod hookkeys;
 pub mod powertoys;
 pub mod autostart;
 #[cfg(any(windows, target_os = "linux"))]
+pub mod clipboard;
+#[cfg(any(windows, target_os = "linux"))]
 pub mod desktop_font;
 #[cfg(target_os = "linux")]
 pub mod gnome_keys;
@@ -26,6 +28,7 @@ pub mod portal_keys;
 pub mod screen;
 pub mod session;
 pub mod tray;
+pub mod windows_list;
 #[cfg(target_os = "linux")]
 pub mod x11;
 

@@ -37,6 +37,10 @@ pub struct Daemon {
     pub settings_window: Option<(AnyWindowHandle, WeakEntity<crate::settings_view::SettingsView>)>,
     /// One overlay per display while picking a color.
     pub picker_windows: Vec<AnyWindowHandle>,
+    /// Screenshot overlays, one per display, while one is being taken.
+    pub shot_windows: Vec<AnyWindowHandle>,
+    /// Long-lived so X11 keeps serving copied images.
+    pub image_clipboard: yaltri_platform::clipboard::ImageClipboard,
     pub colors: ColorHistory,
     pub color_editor: Option<Entity<ColorEditor>>,
     pub color_editor_window: Option<AnyWindowHandle>,
@@ -108,6 +112,8 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 launcher_window: None,
                 settings_window: None,
                 picker_windows: Vec::new(),
+                shot_windows: Vec::new(),
+                image_clipboard: yaltri_platform::clipboard::ImageClipboard::new(),
                 colors,
                 color_editor: None,
                 color_editor_window: None,
@@ -236,6 +242,7 @@ impl Daemon {
                 let icon = match tool {
                     ToolId::Launcher => "search",
                     ToolId::Picker => "pipette",
+                    ToolId::Shot => "camera",
                     // Opening the menu takes focus away from the window to pin.
                     ToolId::Pin => return None,
                 };
@@ -527,7 +534,7 @@ fn first_run_setup(settings: &Settings, paths: &Paths) {
 
 /// Tools that have a UI. All of them, for now; new tools start here as false.
 pub fn is_implemented(tool: ToolId) -> bool {
-    matches!(tool, ToolId::Launcher | ToolId::Picker | ToolId::Pin)
+    matches!(tool, ToolId::Launcher | ToolId::Picker | ToolId::Pin | ToolId::Shot)
 }
 
 /// Light/dark from the OS. Re-read before every command (each one opens or
@@ -548,6 +555,11 @@ fn handle(cmd: Command, cx: &mut App) {
         Command::Toggle(ToolId::Picker) => {
             if cx.global::<Daemon>().settings.picker.enabled {
                 picker::toggle(cx);
+            }
+        }
+        Command::Toggle(ToolId::Shot) => {
+            if cx.global::<Daemon>().settings.shot.enabled {
+                crate::shot::toggle(cx);
             }
         }
         Command::Toggle(ToolId::Pin) => {

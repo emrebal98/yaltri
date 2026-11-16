@@ -109,7 +109,7 @@ fn open_overlays(cx: &mut App) {
 
 /// Top-left of the window's content in physical desktop pixels.
 #[cfg(windows)]
-fn client_origin(window: &Window) -> Option<(i32, i32)> {
+pub(crate) fn client_origin(window: &Window) -> Option<(i32, i32)> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     let handle = HasWindowHandle::window_handle(window).ok()?;
     match handle.as_raw() {
@@ -119,7 +119,7 @@ fn client_origin(window: &Window) -> Option<(i32, i32)> {
 }
 
 #[cfg(not(windows))]
-fn client_origin(_: &Window) -> Option<(i32, i32)> {
+pub(crate) fn client_origin(_: &Window) -> Option<(i32, i32)> {
     None
 }
 

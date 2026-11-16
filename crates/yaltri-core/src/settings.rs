@@ -20,6 +20,7 @@ pub struct Settings {
     pub games: GamesSettings,
     pub picker: PickerSettings,
     pub pin: PinSettings,
+    pub shot: ShotSettings,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -105,6 +106,22 @@ pub struct PinSettings {
     pub hotkey: String,
 }
 
+/// Screenshots: where saved files go.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ShotSettings {
+    pub enabled: bool,
+    pub hotkey: String,
+    /// Folder for saved screenshots. Empty: `Pictures/Screenshots`.
+    pub save_dir: PathBuf,
+}
+
+impl Default for ShotSettings {
+    fn default() -> Self {
+        Self { enabled: true, hotkey: "Super+Shift+S".into(), save_dir: PathBuf::new() }
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -115,6 +132,7 @@ impl Default for Settings {
             games: GamesSettings::default(),
             picker: PickerSettings::default(),
             pin: PinSettings::default(),
+            shot: ShotSettings::default(),
         }
     }
 }
@@ -225,6 +243,7 @@ impl Settings {
             ToolId::Launcher => self.launcher.enabled,
             ToolId::Picker => self.picker.enabled,
             ToolId::Pin => self.pin.enabled,
+            ToolId::Shot => self.shot.enabled,
         }
     }
 
@@ -233,6 +252,7 @@ impl Settings {
             ToolId::Launcher => self.launcher.enabled = enabled,
             ToolId::Picker => self.picker.enabled = enabled,
             ToolId::Pin => self.pin.enabled = enabled,
+            ToolId::Shot => self.shot.enabled = enabled,
         }
     }
 
@@ -241,6 +261,7 @@ impl Settings {
             ToolId::Launcher => &self.launcher.hotkey,
             ToolId::Picker => &self.picker.hotkey,
             ToolId::Pin => &self.pin.hotkey,
+            ToolId::Shot => &self.shot.hotkey,
         }
     }
 
@@ -249,6 +270,7 @@ impl Settings {
             ToolId::Launcher => self.launcher.hotkey = hotkey,
             ToolId::Picker => self.picker.hotkey = hotkey,
             ToolId::Pin => self.pin.hotkey = hotkey,
+            ToolId::Shot => self.shot.hotkey = hotkey,
         }
     }
 
@@ -368,6 +390,14 @@ mod tests {
 enabled = true
 ").unwrap();
         assert_eq!(old.pin, PinSettings::default(), "older files get the pin defaults");
+    }
+
+    #[test]
+    fn shot_defaults_to_super_shift_s_and_the_pictures_folder() {
+        let s = Settings::default();
+        assert_eq!(s.shot.hotkey, "Super+Shift+S");
+        assert!(s.shot.save_dir.as_os_str().is_empty());
+        assert!(s.hotkey_conflicts().is_empty());
     }
 
     #[test]

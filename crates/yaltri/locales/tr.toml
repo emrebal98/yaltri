@@ -62,6 +62,7 @@
 "tool.launcher" = "Arama"
 "tool.picker" = "Renk seçici"
 "tool.pin" = "Üstte tut"
+"tool.shot" = "Ekran görüntüsü"
 
 # Kısayol kaydedici
 "shortcut.click_to_change" = "Değiştirmek için tıklayın"
@@ -93,6 +94,14 @@
 "settings.launcher.description" = "Uygulama, dosya, oyun ve hesap makinesi tek kutuda"
 "settings.picker.description" = "Ekrandaki herhangi bir pikselin rengini al"
 "settings.pin.description" = "Öndeki pencereyi diğer tüm pencerelerin üstünde tut"
+"settings.shot.description" = "Bir alanın, pencerenin ya da tüm ekranın görüntüsünü al"
+"settings.shot.folder" = "Kayıt klasörü"
+"settings.shot.open" = "Aç"
+"settings.shot.change" = "Değiştir…"
+"settings.shot.choose" = "Ekran görüntüleri klasörünü seç"
+"shot.mode.rect" = "Alan"
+"shot.mode.window" = "Pencere"
+"shot.mode.screen" = "Ekran"
 "settings.group.sources" = "Kaynaklar"
 "settings.sources.apps" = "Uygulamalar"
 "settings.sources.files" = "Dosya ve klasörler"

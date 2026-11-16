@@ -73,6 +73,7 @@ pub fn tool_name(tool: ToolId) -> &'static str {
         ToolId::Launcher => t("tool.launcher"),
         ToolId::Picker => t("tool.picker"),
         ToolId::Pin => t("tool.pin"),
+        ToolId::Shot => t("tool.shot"),
     }
 }
 
@@ -809,6 +810,64 @@ impl SettingsView {
         ]
     }
 
+    /// Asks for a folder and saves it as the screenshots folder.
+    fn choose_shot_folder(&mut self, cx: &mut Context<Self>) {
+        let answer = cx.prompt_for_paths(gpui_kit::PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some(t("settings.shot.choose").into()),
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = answer.await else { return };
+            let Some(dir) = paths.into_iter().next() else { return };
+            let _ = this.update(cx, |_, cx| {
+                let daemon = cx.global_mut::<Daemon>();
+                let mut settings = daemon.settings.clone();
+                settings.shot.save_dir = dir;
+                if let Err(e) = daemon.update_settings(settings) {
+                    tracing::warn!("saving the screenshots folder failed: {e:#}");
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn shot_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let enabled = self.row(ToolId::Shot).enabled;
+        let toggle = ui::switch("shot-enabled", enabled, p)
+            .on_click(cx.listener(move |this, _, _, cx| this.set_tool_enabled(ToolId::Shot, !enabled, cx)))
+            .into_any_element();
+        let folder = crate::shot_output::save_dir(&cx.global::<Daemon>().settings.shot);
+        let shown = folder.display().to_string();
+        let body = card(enabled, p)
+            .child(self.shortcut_row(ToolId::Shot, p, cx))
+            .child(
+                setting_row(56., true, t("settings.shot.folder"), Some(&shown), p)
+                    .child(
+                        ui::button("shot-folder-open", ButtonKind::Secondary, p)
+                            .child(ui::icon("folder-open", 14., p.foreground))
+                            .child(t("settings.shot.open"))
+                            .on_click(move |_, _, _| {
+                                let _ = std::fs::create_dir_all(&folder);
+                                let _ = open::that_detached(&folder);
+                            }),
+                    )
+                    .child(
+                        ui::button("shot-folder-change", ButtonKind::Secondary, p)
+                            .child(t("settings.shot.change"))
+                            .on_click(cx.listener(|this, _, _, cx| this.choose_shot_folder(cx))),
+                    ),
+            )
+            .when(!enabled, |d| d.child(blocker()));
+        vec![
+            section_header(tool_name(ToolId::Shot), Some(t("settings.shot.description")), Some(toggle), p)
+                .into_any_element(),
+            body.into_any_element(),
+        ]
+    }
+
     fn pin_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let enabled = self.row(ToolId::Pin).enabled;
         let toggle = ui::switch("pin-enabled", enabled, p)
@@ -989,6 +1048,10 @@ impl Render for SettingsView {
         if is_implemented(ToolId::Picker) {
             starts.push((ToolId::Picker, first + sections.len()));
             sections.extend(self.picker_section(p, cx));
+        }
+        if is_implemented(ToolId::Shot) {
+            starts.push((ToolId::Shot, first + sections.len()));
+            sections.extend(self.shot_section(p, cx));
         }
         if is_implemented(ToolId::Pin) {
             starts.push((ToolId::Pin, first + sections.len()));

@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+chrono.workspace = true
+directories.workspace = true
 futures.workspace = true
 gpui-kit.workspace = true
 image.workspace = true

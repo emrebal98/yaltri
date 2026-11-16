@@ -14,6 +14,7 @@ tracing.workspace = true
 yaltri-core.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+arboard.workspace = true
 global-hotkey.workspace = true
 serde_json.workspace = true
 tray-icon.workspace = true
@@ -21,6 +22,7 @@ windows.workspace = true
 windows-sys.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+arboard = { workspace = true, features = ["wayland-data-control"] }
 ashpd.workspace = true
 global-hotkey.workspace = true
 image.workspace = true

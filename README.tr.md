@@ -36,6 +36,10 @@ HEX, RGB, HSL, OKLCH ya da beş başka formatta kopyala.
 
 <p align="center"><img src="docs/media/color-picker.gif" width="720" alt="Renk seçme: kod ve ad imleci izler, fare tekerleği bir köşede büyüteci açar, tıklayınca editör dokuz formatı ve geçmişi gösterir"></p>
 
+### 📷 Ekran görüntüsü · `Super+Shift+S`
+
+Ekranı dondur, bir alan, pencere ya da tüm ekranı seç, sonra kopyala ya da PNG olarak kaydet.
+
 ### 📌 Üstte tut · `Super+Shift+T`
 
 Çalıştığın pencereyi diğer tüm pencerelerin üstünde tut. Kısayola tekrar basınca bırakılır.
@@ -74,6 +78,7 @@ GNOME'da tepsi ikonu için AppIndicator eklentisi gerekir (Ubuntu'da hazır geli
 |---|---|
 | `Super+Shift+F` | Arama kutusunu açar |
 | `Super+Shift+C` | Renk seçiciyi açar |
+| `Super+Shift+S` | Ekran görüntüsü alır |
 | `Super+Shift+T` | Öndeki pencereyi üstte tutar (tekrar: bırakır) |
 
 Kısayolları **Ayarlar** penceresinden değiştirebilirsin (tepsi ikonuna sağ tık → Ayarlar).
@@ -111,6 +116,16 @@ Yazarken filtrelemek için başa kısaltma ve boşluk yaz: `/u ` uygulama, `/d `
   HEX, RGB, HSL, HSV, OKLCH, CMYK, HWB, Decimal, Float.
   Seçimde kopyalanacak format **Ayarlar → Renk seçici**'den belirlenir.
 
+### Ekran görüntüsü
+
+- Üstteki çubuk **Alan** (sürükle), **Pencere** (birine tıkla) ve **Ekran** arasında geçer. Tuşlar: `R`, `W`, `F`.
+- Seçimin altında: **Kopyala** (`Enter`, `Ctrl+C`) ve **Kaydet** (`Ctrl+S`, ayrıca kopyalar).
+  `Esc` ya da sağ tık iptal eder.
+- Dosyalar **Ayarlar → Ekran görüntüsü**'nden başka klasör seçilmedikçe `Resimler/Screenshots`'a kaydedilir.
+- GNOME, Yaltri'nin ekran görüntüsü alıp alamayacağını bir kez sorar. Wayland'da **Pencere** modu yok,
+  çünkü uygulamalar diğer pencerelerin yerini göremez. KDE, Hyprland ve diğer Wayland masaüstleri kendi
+  seçim ekranını gösterir; sonuç kopyalanır ve kaydedilir.
+
 ### Üstte tut
 
 - Windows, GNOME, KDE Plasma, X11 masaüstleri ve Hyprland'de çalışır (Hyprland'de pencereyi sabitler).
@@ -125,6 +140,7 @@ yaltri --foreground       # terminalde kal, loglar burada
 yaltri toggle launcher    # arama kutusunu aç / kapat
 yaltri toggle picker      # renk seçiciyi aç
 yaltri toggle pin         # öndeki pencereyi üstte tut / bırak
+yaltri toggle shot        # ekran görüntüsü al
 yaltri settings           # ayarları aç
 yaltri quit               # kapat
 yaltri update             # inen güncellemeyi kur (yoksa denetle)

@@ -36,6 +36,10 @@ and copy it as HEX, RGB, HSL, OKLCH or five other formats.
 
 <p align="center"><img src="docs/media/color-picker.gif" width="720" alt="Picking colors: the code and name follow the cursor, the mouse wheel opens a magnifier on a tile corner, and a click opens the editor with nine formats and the history"></p>
 
+### 📷 Screenshot · `Super+Shift+S`
+
+Freeze the screen, pick an area, a window or a whole display, then copy it or save it as a PNG.
+
 ### 📌 Always on top · `Super+Shift+T`
 
 Keep the window you are working in above all others. Press the shortcut again to release it.
@@ -74,6 +78,7 @@ On GNOME the tray icon needs the AppIndicator extension (preinstalled on Ubuntu)
 |---|---|
 | `Super+Shift+F` | Open search |
 | `Super+Shift+C` | Open the color picker |
+| `Super+Shift+S` | Take a screenshot |
 | `Super+Shift+T` | Keep the focused window on top (again: release it) |
 
 Change shortcuts in the **Settings** window (right-click the tray icon → Settings).
@@ -112,6 +117,16 @@ for example all your games.
   HEX, RGB, HSL, HSV, OKLCH, CMYK, HWB, Decimal, Float.
   The format a pick copies is set in **Settings → Color picker**.
 
+### Screenshot
+
+- The bar at the top switches between **Area** (drag), **Window** (click one) and **Screen**. Keys: `R`, `W`, `F`.
+- Under the selection: **Copy** (`Enter`, `Ctrl+C`) and **Save** (`Ctrl+S`), which also copies.
+  `Esc` or right click cancels.
+- Files go to `Pictures/Screenshots` unless you pick another folder in **Settings → Screenshot**.
+- GNOME asks once whether Yaltri may take screenshots. On Wayland the **Window** mode is not available,
+  since apps can't see where other windows are. KDE, Hyprland and other Wayland desktops show their
+  own screenshot picker; the result is copied and saved.
+
 ### Always on top
 
 - Works on Windows, GNOME, KDE Plasma, X11 desktops and Hyprland (where it pins the window).
@@ -126,6 +141,7 @@ yaltri --foreground       # stay in the terminal, with logs
 yaltri toggle launcher    # open / close search
 yaltri toggle picker      # open the color picker
 yaltri toggle pin         # keep the focused window on top / release it
+yaltri toggle shot        # take a screenshot
 yaltri settings           # open settings
 yaltri quit               # quit
 yaltri update             # install a downloaded update (or check for one)
