@@ -207,9 +207,72 @@ pub async fn pick_color_portal() -> Result<Option<[u8; 3]>> {
     }
 }
 
+/// A screenshot through the xdg-desktop-portal. `interactive` shows the
+/// desktop's own picker; otherwise the whole desktop is captured (GNOME asks
+/// for permission once). `None` if the user cancelled. The file the portal
+/// wrote is read and deleted.
+#[cfg(target_os = "linux")]
+pub async fn capture_portal(interactive: bool) -> Result<Option<Screenshot>> {
+    use anyhow::Context;
+    let request = ashpd::desktop::screenshot::Screenshot::request()
+        .interactive(interactive)
+        .modal(true)
+        .send()
+        .await
+        .context("screenshot portal unavailable")?;
+    let uri = match request.response() {
+        Ok(shot) => shot.uri().as_str().to_owned(),
+        Err(ashpd::Error::Response(ashpd::desktop::ResponseError::Cancelled)) => return Ok(None),
+        Err(e) => return Err(e).context("taking a screenshot"),
+    };
+    let path = file_uri_path(&uri).with_context(|| format!("unexpected screenshot location {uri}"))?;
+    let image = image::open(&path).with_context(|| format!("reading {}", path.display()));
+    if let Err(e) = std::fs::remove_file(&path) {
+        tracing::debug!("removing {} failed: {e}", path.display());
+    }
+    let image = image?.to_rgba8();
+    let (width, height) = image.dimensions();
+    let mut bgra = image.into_raw();
+    for p in bgra.chunks_exact_mut(4) {
+        p.swap(0, 2);
+    }
+    Ok(Some(Screenshot { x: 0, y: 0, width, height, bgra }))
+}
+
+/// `file:///home/a/Pictures/Screenshot%20x.png` -> the path.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn file_uri_path(uri: &str) -> Option<std::path::PathBuf> {
+    let encoded = uri.strip_prefix("file://")?;
+    let bytes = encoded.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = std::str::from_utf8(bytes.get(i + 1..i + 3)?).ok()?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    Some(std::path::PathBuf::from(String::from_utf8(out).ok()?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decodes_file_uris() {
+        assert_eq!(
+            file_uri_path("file:///home/a/Pictures/Screenshot%20from%202026.png"),
+            Some("/home/a/Pictures/Screenshot from 2026.png".into())
+        );
+        assert_eq!(file_uri_path("file:///tmp/%C3%BC.png"), Some("/tmp/ü.png".into()));
+        assert_eq!(file_uri_path("https://x"), None);
+        assert_eq!(file_uri_path("file:///bad%2"), None);
+    }
 
     fn sample() -> Screenshot {
         // 3x2 desktop at (-1, 0); pixel value encodes its position.
