@@ -164,8 +164,9 @@ mod imp {
     struct SniTray {
         tx: CommandSender,
         menu: Vec<Option<MenuEntry>>,
-        /// GNOME: the shell's UI font, to line the shortcuts up.
-        font: Option<Vec<u8>>,
+        /// GNOME: the shell's UI font and its pixel size, to line the
+        /// shortcuts up.
+        font: Option<(Vec<u8>, Option<f32>)>,
     }
 
     impl ksni::Tray for SniTray {
@@ -194,7 +195,7 @@ mod imp {
             let gnome = is_gnome();
             // Shell menus follow the panel, which we assume dark.
             let ink = if crate::icon::taskbar_is_light() { "#17181B" } else { "#ECEDEF" };
-            let face = self.font.as_deref().and_then(|data| ttf_parser::Face::parse(data, 0).ok());
+            let face = self.font.as_ref().and_then(|(data, px)| Some((ttf_parser::Face::parse(data, 0).ok()?, *px)));
             let with_shortcut: Vec<&str> = self
                 .menu
                 .iter()
@@ -202,7 +203,7 @@ mod imp {
                 .filter(|e| e.shortcut.as_deref().is_some_and(|s| !s.is_empty()))
                 .map(|e| e.label.as_str())
                 .collect();
-            let pads = shortcut_pads(&with_shortcut, |text| face.as_ref().and_then(|f| text_width(f, text)));
+            let pads = shortcut_pads(&with_shortcut, |text| face.as_ref().and_then(|(f, px)| text_width(f, *px, text)));
             self.menu
                 .iter()
                 .map(|entry| match entry {
@@ -274,14 +275,23 @@ mod imp {
         }
     }
 
-    /// Advance width of `text` in font units; `None` if a glyph is missing.
-    fn text_width(face: &ttf_parser::Face, text: &str) -> Option<f32> {
-        text.chars().map(|c| face.glyph_index(c).and_then(|g| face.glyph_hor_advance(g)).map(f32::from)).sum()
+    /// Width of `text` as the shell lays it out at `px` pixels: hinted
+    /// metrics round each glyph's advance to a whole pixel, which drifts by
+    /// several pixels over a label. In font units when `px` is unknown.
+    /// `None` if a glyph is missing.
+    pub(super) fn text_width(face: &ttf_parser::Face, px: Option<f32>, text: &str) -> Option<f32> {
+        let scale = px.map(|px| px / f32::from(face.units_per_em()));
+        text.chars()
+            .map(|c| {
+                let advance = f32::from(face.glyph_hor_advance(face.glyph_index(c)?)?);
+                Some(scale.map_or(advance, |s| (advance * s).round()))
+            })
+            .sum()
     }
 
     impl Tray {
         pub fn spawn(tx: CommandSender, menu: Vec<Option<MenuEntry>>) -> Result<Self> {
-            let font = if is_gnome() { crate::desktop_font::file() } else { None };
+            let font = if is_gnome() { crate::desktop_font::file().map(|f| (f, crate::desktop_font::size_px())) } else { None };
             let handle =
                 SniTray { tx, menu, font }.spawn().context("starting tray (GNOME needs the AppIndicator extension)")?;
             Ok(Self { handle })
@@ -300,13 +310,29 @@ mod imp {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use super::imp::{MIN_GAP, shortcut_pads};
+    use super::imp::{MIN_GAP, shortcut_pads, text_width};
 
     #[test]
     fn measured_labels_pad_to_the_widest() {
         // Space 2 units wide; labels 10 and 16 units.
         let width = |t: &str| Some(match t { " " => 2., "Search" => 10., "Color picker" => 16., _ => 0. });
         assert_eq!(shortcut_pads(&["Search", "Color picker"], width), [MIN_GAP + 3, MIN_GAP]);
+    }
+
+    /// Ubuntu 11 at 96 dpi, as GNOME Shell drew it: "Search" + 15 spaces
+    /// reached 90 px, "Color picker" + 4 spaces 94 px. Whole-pixel advances
+    /// pad "Search" to 93 px instead.
+    #[test]
+    fn ubuntu_font_pads_to_within_half_a_space() {
+        let Ok(data) = std::fs::read("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf") else { return };
+        let face = ttf_parser::Face::parse(&data, 0).unwrap();
+        let px = Some(11. * 96. / 72.);
+        let width = |t: &str| text_width(&face, px, t);
+        let labels = ["Search", "Color picker"];
+        let pads = shortcut_pads(&labels, width);
+        let space = width(" ").unwrap();
+        let ends: Vec<f32> = labels.iter().zip(&pads).map(|(l, n)| width(l).unwrap() + *n as f32 * space).collect();
+        assert!((ends[0] - ends[1]).abs() <= space / 2., "shortcuts start at {ends:?}");
     }
 
     #[test]

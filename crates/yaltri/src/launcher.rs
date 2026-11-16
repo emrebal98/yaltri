@@ -687,6 +687,13 @@ impl Render for Launcher {
             .child(chips_row)
             .when_some(below, |card, below| card.child(div().h(px(1.)).flex_none().bg(p.border)).child(below));
 
+        // Linux: X11 cuts the window to our rounded frame with a 1-bit shape
+        // (`ui::round_corners`), so the card's anti-aliased corner pixels
+        // that survive the cut show whatever is under them. On an opaque
+        // swapchain (NVIDIA) that is black, which left a dark, jagged arc.
+        // Backing the card in its border color keeps the cut edge clean.
+        let card = div().when(cfg!(target_os = "linux"), |d| d.bg(p.border)).child(card);
+
         div().size_full().pt(px(SHADOW_TOP + dy)).px(px(SHADOW_X)).opacity(opacity).child(card)
     }
 }

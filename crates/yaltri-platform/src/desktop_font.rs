@@ -13,7 +13,7 @@ pub fn family() -> Option<String> {
 }
 
 #[cfg(target_os = "linux")]
-pub use imp::file;
+pub use imp::{file, size_px};
 
 #[cfg(target_os = "linux")]
 mod imp {
@@ -30,6 +30,17 @@ mod imp {
         std::fs::read(path).ok()
     }
 
+    /// Pixel size the shell draws the interface font at: the setting's
+    /// points at 96 dpi, times GNOME's text scaling factor.
+    pub fn size_px() -> Option<f32> {
+        let points = size_from_setting(&run("gsettings", &["get", "org.gnome.desktop.interface", "font-name"])?)?;
+        let scaling = run("gsettings", &["get", "org.gnome.desktop.interface", "text-scaling-factor"])
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|f| *f > 0.)
+            .unwrap_or(1.);
+        Some(points * 96. / 72. * scaling)
+    }
+
     fn run(cmd: &str, args: &[&str]) -> Option<String> {
         let out = Command::new(cmd).args(args).output().ok()?;
         out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
@@ -42,6 +53,13 @@ mod imp {
         let family = name.rsplit_once(' ').filter(|(_, size)| size.parse::<f32>().is_ok()).map_or(name, |(f, _)| f);
         let family = family.trim().trim_end_matches(',');
         (!family.is_empty() && family.parse::<f32>().is_err()).then(|| family.to_owned())
+    }
+
+    /// `'Ubuntu 11'` -> `11.0`: the size in points; `None` when it has none.
+    pub(super) fn size_from_setting(value: &str) -> Option<f32> {
+        let name = value.trim().trim_matches('\'').trim();
+        let (_, size) = name.rsplit_once(' ')?;
+        size.parse::<f32>().ok().filter(|s| *s > 0.)
     }
 }
 
@@ -97,6 +115,16 @@ mod tests {
         assert_eq!(family_from_setting("'Fira Sans, 12'").as_deref(), Some("Fira Sans"));
         assert_eq!(family_from_setting("''"), None);
         assert_eq!(family_from_setting("'11'"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn gnome_setting_gives_the_size() {
+        use super::imp::size_from_setting;
+        assert_eq!(size_from_setting("'Ubuntu 11'"), Some(11.));
+        assert_eq!(size_from_setting("'Noto Sans 10.5'"), Some(10.5));
+        assert_eq!(size_from_setting("'Cantarell'"), None);
+        assert_eq!(size_from_setting("''"), None);
     }
 
     #[cfg(windows)]
