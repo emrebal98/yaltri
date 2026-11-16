@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/emrebal98/yaltri/compare/v0.3.0...v0.3.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **linux:** clean up launcher corners and line up tray shortcuts ([#38](https://github.com/emrebal98/yaltri/issues/38)) ([182128d](https://github.com/emrebal98/yaltri/commit/182128d70fc98ebb879976ba4af502a0c4f431a7))
+
 ## [0.3.0](https://github.com/emrebal98/yaltri/compare/v0.2.0...v0.3.0) (2026-11-15)
 
 
