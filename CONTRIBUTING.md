@@ -21,13 +21,13 @@ Contributions are welcome. Open an [issue](https://github.com/emrebal98/yaltri/i
    ```sh
    git clone https://github.com/emrebal98/yaltri
    cd yaltri
-   cargo run -p yaltri
+   cargo run -p yaltri -- --foreground
    ```
 
 ## Common commands
 
 ```sh
-cargo run -p yaltri                      # debug build, logs in the terminal
+cargo run -p yaltri -- --foreground     # debug build, stays in the terminal with logs
 cargo test --workspace                   # tests
 cargo clippy --workspace --all-targets   # lint
 cargo build --release -p yaltri          # target/release/yaltri(.exe)

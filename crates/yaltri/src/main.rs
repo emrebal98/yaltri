@@ -39,6 +39,9 @@ komutlar:
   uninstall          yaltri'yi kaldır; ayarlar ve geçmiş için sorar
   uninstall --purge  yaltri'yi ayarları ve geçmişiyle birlikte kaldır
 
+seçenekler:
+  --foreground       terminalden ayrılma, günlükleri burada göster
+
 Kısayolları kendisi kuramadığı masaüstlerinde (ör. Sway) bu komutları
 masaüstünün kısayol ayarlarına bağlayın: `yaltri toggle launcher`.";
 
@@ -47,7 +50,8 @@ fn main() -> ExitCode {
     let session = Session::detect();
     force_xwayland_on_gnome(session);
 
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let foreground = take_flag(&mut args, "--foreground");
     if args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
@@ -72,7 +76,7 @@ fn main() -> ExitCode {
         }
     };
 
-    match run(session, command) {
+    match run(session, command, foreground) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("hata: {e:#}");
@@ -102,7 +106,7 @@ fn uninstall(purge: bool) -> ExitCode {
     }
 }
 
-fn run(session: Session, command: Option<Command>) -> Result<()> {
+fn run(session: Session, command: Option<Command>, foreground: bool) -> Result<()> {
     let paths = Paths::detect()?;
     // Logging is for the daemon (and installing it), not for commands
     // forwarded to one; it can be set up only once.
@@ -125,10 +129,51 @@ fn run(session: Session, command: Option<Command>) -> Result<()> {
         return Ok(());
     }
 
+    // Linux: started by hand in a terminal, the daemon would stop when the
+    // terminal closes. Start a detached copy instead and give the terminal
+    // back. (Windows release builds have no console to begin with.)
+    #[cfg(target_os = "linux")]
+    if !foreground && started_from_terminal() {
+        start_detached(command)?;
+        i18n::use_saved_language();
+        println!("{}", i18n::t("cli.started"));
+        return Ok(());
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = foreground;
+
     let _log_guard = log_guard.unwrap_or_else(|| init_logging(&paths));
     tracing::info!(?session, version = env!("CARGO_PKG_VERSION"), "starting daemon");
 
     daemon::run(paths, session, command)
+}
+
+/// Removes every `flag` from `args`; whether there was one.
+fn take_flag(args: &mut Vec<String>, flag: &str) -> bool {
+    let before = args.len();
+    args.retain(|a| a != flag);
+    args.len() != before
+}
+
+#[cfg(target_os = "linux")]
+fn started_from_terminal() -> bool {
+    use std::io::IsTerminal as _;
+    std::io::stdin().is_terminal() || std::io::stdout().is_terminal() || std::io::stderr().is_terminal()
+}
+
+/// Starts this program again as the daemon, in its own process group with
+/// no terminal attached, handing it `command`.
+#[cfg(target_os = "linux")]
+fn start_detached(command: Option<Command>) -> Result<()> {
+    use anyhow::Context as _;
+    let exe = std::env::current_exe().context("locating the yaltri executable")?;
+    let exe = exe.to_str().context("yaltri's path is not valid UTF-8")?;
+    let mut args = vec!["--foreground".to_owned()];
+    if let Some(command) = command {
+        // The wire form is also the command line: `toggle launcher`.
+        args.extend(command.to_string().split(' ').map(str::to_owned));
+    }
+    yaltri_platform::launch::run(exe, &args, false)
 }
 
 /// GNOME on Wayland has no layer-shell and does not let clients place or
@@ -167,4 +212,26 @@ fn init_logging(paths: &Paths) -> Option<tracing_appender::non_blocking::WorkerG
         default_panic(info);
     }));
     guard
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn foreground_flag_is_taken_out_of_the_command() {
+        let mut args: Vec<String> = ["toggle", "--foreground", "launcher"].map(String::from).into();
+        assert!(take_flag(&mut args, "--foreground"));
+        assert_eq!(args, ["toggle", "launcher"]);
+        assert_eq!(Command::from_args(&args).unwrap(), Some(Command::Toggle(yaltri_core::ToolId::Launcher)));
+        assert!(!take_flag(&mut args, "--foreground"));
+    }
+
+    #[test]
+    fn every_command_round_trips_through_its_command_line() {
+        for cmd in [Command::Toggle(yaltri_core::ToolId::Launcher), Command::Toggle(yaltri_core::ToolId::Picker), Command::Settings, Command::Quit, Command::Update] {
+            let line = cmd.to_string();
+            assert_eq!(Command::from_args(line.split(' ')).unwrap(), Some(cmd), "{line}");
+        }
+    }
 }

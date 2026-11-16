@@ -21,13 +21,13 @@ Katkıya açığız. Hata bildirimi ve öneriler için [issue](https://github.co
    ```sh
    git clone https://github.com/emrebal98/yaltri
    cd yaltri
-   cargo run -p yaltri
+   cargo run -p yaltri -- --foreground
    ```
 
 ## Sık kullanılan komutlar
 
 ```sh
-cargo run -p yaltri                      # debug build, loglar terminalde
+cargo run -p yaltri -- --foreground     # debug build, terminalde kalır, loglar burada
 cargo test --workspace                   # testler
 cargo clippy --workspace --all-targets   # lint
 cargo build --release -p yaltri          # target/release/yaltri(.exe)

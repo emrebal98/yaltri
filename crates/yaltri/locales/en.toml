@@ -148,6 +148,7 @@
 "uninstall.delete_data" = "Also delete Yaltri's settings, search history and saved colors?"
 "uninstall.yes_no" = "[y/N]"
 "uninstall.done" = "Yaltri was uninstalled."
+"cli.started" = "Yaltri is running in the background. Stop it with `yaltri quit`."
 "uninstall.binary_kept" = "{path} was not installed by install.sh, so it was left in place; remove it the way you installed it."
 "color.coral" = "Coral"
 "color.rose" = "Rose"

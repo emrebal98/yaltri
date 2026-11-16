@@ -110,6 +110,7 @@ Yazarken filtrelemek için başa kısaltma ve boşluk yaz: `/u ` uygulama, `/d `
 
 ```sh
 yaltri                    # arka planda başlat
+yaltri --foreground       # terminalde kal, loglar burada
 yaltri toggle launcher    # arama kutusunu aç / kapat
 yaltri toggle picker      # renk seçiciyi aç
 yaltri settings           # ayarları aç
