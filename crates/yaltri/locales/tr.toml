@@ -63,6 +63,7 @@
 "tool.picker" = "Renk seçici"
 "tool.pin" = "Üstte tut"
 "tool.shot" = "Ekran görüntüsü"
+"tool.ocr" = "Metin çıkar"
 
 # Kısayol kaydedici
 "shortcut.click_to_change" = "Değiştirmek için tıklayın"
@@ -95,6 +96,15 @@
 "settings.picker.description" = "Ekrandaki herhangi bir pikselin rengini al"
 "settings.pin.description" = "Öndeki pencereyi diğer tüm pencerelerin üstünde tut"
 "settings.shot.description" = "Bir alanın, pencerenin ya da tüm ekranın görüntüsünü al"
+"settings.ocr.description" = "Ekranın herhangi bir yerindeki metni kopyala"
+"settings.ocr.engine" = "Metin tanıma"
+"settings.ocr.engine_hint" = "Tesseract kullanır: sudo apt install tesseract-ocr tesseract-ocr-tur"
+"ocr.hint" = "Kopyalamak istediğin metnin üstünden sürükle"
+"ocr.copied" = "Metin kopyalandı · {n} satır"
+"ocr.empty" = "Bu alanda metin bulunamadı"
+"ocr.tesseract" = "Metin tanıma için Tesseract gerekli: sudo apt install tesseract-ocr tesseract-ocr-tur"
+"ocr.no_language" = "Metin tanıma dili yüklü değil (Ayarlar › Saat ve dil › Dil)"
+"ocr.failed" = "Metin okunamadı"
 "settings.shot.folder" = "Kayıt klasörü"
 "settings.shot.open" = "Aç"
 "settings.shot.change" = "Değiştir…"

@@ -41,14 +41,14 @@ const WIDTH_BUTTON: f32 = 28.;
 const GAP: f32 = 4.;
 const TOOLBAR_H: f32 = BUTTON + 2. * 6. + 2.;
 
-/// Tools, separator, colours, widths, separator, undo, separator, copy /
-/// save / cancel.
+/// Tools, separator, colours, widths, separator, undo, separator, text /
+/// copy / save / cancel.
 fn toolbar_width() -> f32 {
     let tools = Tool::ALL.len() as f32 * BUTTON;
     let colors = markup::COLORS.len() as f32 * SWATCH;
     let widths = markup::WIDTHS.len() as f32 * WIDTH_BUTTON;
-    let items = Tool::ALL.len() + markup::COLORS.len() + markup::WIDTHS.len() + 4 + 3;
-    tools + colors + widths + 4. * BUTTON + 3. + (items as f32 - 1.) * GAP + 2. * 6. + 2.
+    let items = Tool::ALL.len() + markup::COLORS.len() + markup::WIDTHS.len() + 5 + 3;
+    tools + colors + widths + 5. * BUTTON + 3. + (items as f32 - 1.) * GAP + 2. * 6. + 2.
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -97,29 +97,48 @@ pub fn toolbar_position(sel: LRect, size: (f32, f32), area: (f32, f32)) -> (f32,
     (x, y)
 }
 
-/// Starts a screenshot, or cancels the open one.
+/// What the overlay is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Purpose {
+    /// Screenshot: modes, drawing, copy / save.
+    Shot,
+    /// Text extraction: drag an area, its text is copied.
+    Text,
+}
+
+/// Starts a screenshot, or cancels the open overlay.
 pub fn toggle(cx: &mut App) {
+    open(Purpose::Shot, cx);
+}
+
+/// Starts text extraction, or cancels the open overlay.
+pub fn toggle_text(cx: &mut App) {
+    open(Purpose::Text, cx);
+}
+
+fn open(purpose: Purpose, cx: &mut App) {
     if !cx.global::<Daemon>().shot_windows.is_empty() {
         close(cx);
         return;
     }
     let session = cx.global::<Daemon>().session;
     match session {
-        yaltri_platform::session::Session::WaylandGnome => capture_with_portal(false, cx),
-        yaltri_platform::session::Session::WaylandLayerShell => capture_with_portal(true, cx),
+        yaltri_platform::session::Session::WaylandGnome => capture_with_portal(false, purpose, cx),
+        yaltri_platform::session::Session::WaylandLayerShell => capture_with_portal(true, purpose, cx),
         _ => match screen::capture() {
-            Ok(shot) => open_overlays(Arc::new(shot), true, cx),
+            Ok(shot) => open_overlays(Arc::new(shot), purpose == Purpose::Shot, purpose, cx),
             Err(e) => tracing::error!("screen capture failed: {e:#}"),
         },
     }
 }
 
 #[cfg(target_os = "linux")]
-fn capture_with_portal(interactive: bool, cx: &mut App) {
+fn capture_with_portal(interactive: bool, purpose: Purpose, cx: &mut App) {
     let task = cx.background_executor().spawn(screen::capture_portal(interactive));
+    let action = if purpose == Purpose::Text { Action::Text } else { Action::Save };
     cx.spawn(async move |cx| match task.await {
-        Ok(Some(shot)) if interactive => cx.update(|cx| shot_output::finish(Action::Save, shot, cx)),
-        Ok(Some(shot)) => cx.update(|cx| open_overlays(Arc::new(shot), false, cx)),
+        Ok(Some(shot)) if interactive => cx.update(|cx| shot_output::finish(action, shot, cx)),
+        Ok(Some(shot)) => cx.update(|cx| open_overlays(Arc::new(shot), false, purpose, cx)),
         Ok(None) => {}
         Err(e) => tracing::error!("portal screenshot failed: {e:#}"),
     })
@@ -127,11 +146,11 @@ fn capture_with_portal(interactive: bool, cx: &mut App) {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn capture_with_portal(_: bool, _: &mut App) {
+fn capture_with_portal(_: bool, _: Purpose, _: &mut App) {
     tracing::error!("portal screenshots are only available on Linux");
 }
 
-fn open_overlays(shot: Arc<Screenshot>, window_mode: bool, cx: &mut App) {
+fn open_overlays(shot: Arc<Screenshot>, window_mode: bool, purpose: Purpose, cx: &mut App) {
     let windows = Arc::new(if window_mode { windows_list::visible_windows() } else { Vec::new() });
     let mut handles = Vec::new();
     for display in cx.displays() {
@@ -164,7 +183,7 @@ fn open_overlays(shot: Arc<Screenshot>, window_mode: bool, cx: &mut App) {
             // See the picker: a popup's client area can sit off the display edge.
             let client_origin = crate::picker::client_origin(window).unwrap_or(display_origin);
             let view = cx.new(|cx| {
-                ShotOverlay::new(shot, windows, window_mode, display_origin, client_origin, size, scale, window, cx)
+                ShotOverlay::new(shot, windows, window_mode, purpose, display_origin, client_origin, size, scale, window, cx)
             });
             window.activate_window();
             ui::focus_popup(window);
@@ -194,6 +213,7 @@ pub struct ShotOverlay {
     image: Arc<RenderImage>,
     windows: Arc<Vec<WinRect>>,
     window_mode: bool,
+    purpose: Purpose,
     /// Physical desktop position of the window's content (0,0).
     client_origin: (i32, i32),
     /// Where this display's image goes inside the window, and its size, in
@@ -233,6 +253,7 @@ impl ShotOverlay {
         shot: Arc<Screenshot>,
         windows: Arc<Vec<WinRect>>,
         window_mode: bool,
+        purpose: Purpose,
         display_origin: (i32, i32),
         client_origin: (i32, i32),
         size: (u32, u32),
@@ -266,7 +287,7 @@ impl ShotOverlay {
                     if this.typing && !ctrl {
                         return this.type_key(&ks.key, cx);
                     }
-                    let free = this.tool.is_none() && !ctrl;
+                    let free = this.tool.is_none() && !ctrl && this.purpose == Purpose::Shot;
                     match ks.key.as_str() {
                         "escape" => {
                             close(cx);
@@ -293,6 +314,7 @@ impl ShotOverlay {
             image,
             windows,
             window_mode,
+            purpose,
             client_origin,
             image_offset,
             image_size,
@@ -509,6 +531,10 @@ impl ShotOverlay {
             if self.selection.is_some_and(|s| s.w < MIN_DRAG || s.h < MIN_DRAG) {
                 self.selection = None;
             }
+            if self.purpose == Purpose::Text && self.selection.is_some() {
+                self.finish(Action::Text, cx);
+                return;
+            }
             cx.notify();
         }
     }
@@ -533,6 +559,16 @@ impl ShotOverlay {
     }
 
     fn mode_bar(&self, p: &Palette, cx: &mut Context<Self>) -> gpui_kit::Div {
+        if self.purpose == Purpose::Text {
+            return div().absolute().top(px(16.)).left_0().w(px(self.area().0)).flex().justify_center().child(
+                bar(p)
+                    .id("ocr-hint")
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .child(ui::icon("scan-text", 16., p.foreground))
+                    .child(div().px(px(4.)).text_size(px(13.)).text_color(p.foreground).child(t("ocr.hint")))
+                    .child(tool_button("ocr-close", "x", p).on_click(|_, _, cx| close(cx))),
+            );
+        }
         let mut modes = vec![(Mode::Rect, "square-dashed", t("shot.mode.rect"))];
         if self.window_mode {
             modes.push((Mode::Window, "app-window", t("shot.mode.window")));
@@ -630,6 +666,9 @@ impl ShotOverlay {
                 this.undo(cx);
             })))
             .child(separator())
+            .child(tool_button("shot-text", "scan-text", p).on_click(cx.listener(|this, _, _, cx| {
+                this.finish(Action::Text, cx);
+            })))
             .child(tool_button("shot-copy", "copy", p).on_click(cx.listener(|this, _, _, cx| {
                 this.finish(Action::Copy, cx);
             })))
@@ -720,7 +759,10 @@ impl Render for ShotOverlay {
                 .border_color(p.accent)
         });
         let size_label = self.selection.map(|s| self.size_label(s, p));
-        let toolbar = self.selection.filter(|_| self.drag_from.is_none()).map(|s| self.toolbar(s, p, cx));
+        let toolbar = self
+            .selection
+            .filter(|_| self.drag_from.is_none() && self.purpose == Purpose::Shot)
+            .map(|s| self.toolbar(s, p, cx));
         if self.dirty {
             self.dirty = false;
             let mut all = self.shapes.clone();

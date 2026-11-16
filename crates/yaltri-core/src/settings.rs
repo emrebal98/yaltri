@@ -21,6 +21,7 @@ pub struct Settings {
     pub picker: PickerSettings,
     pub pin: PinSettings,
     pub shot: ShotSettings,
+    pub ocr: OcrSettings,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -116,6 +117,20 @@ pub struct ShotSettings {
     pub save_dir: PathBuf,
 }
 
+/// Text extraction: select an area, its text is copied.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OcrSettings {
+    pub enabled: bool,
+    pub hotkey: String,
+}
+
+impl Default for OcrSettings {
+    fn default() -> Self {
+        Self { enabled: true, hotkey: "Super+Shift+X".into() }
+    }
+}
+
 impl Default for ShotSettings {
     fn default() -> Self {
         Self { enabled: true, hotkey: "Super+Shift+S".into(), save_dir: PathBuf::new() }
@@ -133,6 +148,7 @@ impl Default for Settings {
             picker: PickerSettings::default(),
             pin: PinSettings::default(),
             shot: ShotSettings::default(),
+            ocr: OcrSettings::default(),
         }
     }
 }
@@ -244,6 +260,7 @@ impl Settings {
             ToolId::Picker => self.picker.enabled,
             ToolId::Pin => self.pin.enabled,
             ToolId::Shot => self.shot.enabled,
+            ToolId::Ocr => self.ocr.enabled,
         }
     }
 
@@ -253,6 +270,7 @@ impl Settings {
             ToolId::Picker => self.picker.enabled = enabled,
             ToolId::Pin => self.pin.enabled = enabled,
             ToolId::Shot => self.shot.enabled = enabled,
+            ToolId::Ocr => self.ocr.enabled = enabled,
         }
     }
 
@@ -262,6 +280,7 @@ impl Settings {
             ToolId::Picker => &self.picker.hotkey,
             ToolId::Pin => &self.pin.hotkey,
             ToolId::Shot => &self.shot.hotkey,
+            ToolId::Ocr => &self.ocr.hotkey,
         }
     }
 
@@ -271,6 +290,7 @@ impl Settings {
             ToolId::Picker => self.picker.hotkey = hotkey,
             ToolId::Pin => self.pin.hotkey = hotkey,
             ToolId::Shot => self.shot.hotkey = hotkey,
+            ToolId::Ocr => self.ocr.hotkey = hotkey,
         }
     }
 
@@ -396,6 +416,7 @@ enabled = true
     fn shot_defaults_to_super_shift_s_and_the_pictures_folder() {
         let s = Settings::default();
         assert_eq!(s.shot.hotkey, "Super+Shift+S");
+        assert_eq!(s.ocr.hotkey, "Super+Shift+X");
         assert!(s.shot.save_dir.as_os_str().is_empty());
         assert!(s.hotkey_conflicts().is_empty());
     }

@@ -63,6 +63,7 @@
 "tool.picker" = "Color picker"
 "tool.pin" = "Always on top"
 "tool.shot" = "Screenshot"
+"tool.ocr" = "Text extractor"
 
 # Shortcut recorder
 "shortcut.click_to_change" = "Click to change"
@@ -95,6 +96,15 @@
 "settings.picker.description" = "Grab the color of any pixel on screen"
 "settings.pin.description" = "Keep the focused window above all others"
 "settings.shot.description" = "Capture an area, a window or the whole screen"
+"settings.ocr.description" = "Copy the text in any area of the screen"
+"settings.ocr.engine" = "Text recognition"
+"settings.ocr.engine_hint" = "Uses Tesseract: sudo apt install tesseract-ocr tesseract-ocr-tur"
+"ocr.hint" = "Drag over the text to copy"
+"ocr.copied" = "Text copied · {n} lines"
+"ocr.empty" = "No text found in that area"
+"ocr.tesseract" = "Text recognition needs Tesseract: sudo apt install tesseract-ocr tesseract-ocr-tur"
+"ocr.no_language" = "No text recognition language is installed (Settings › Time & language › Language)"
+"ocr.failed" = "Could not read the text"
 "settings.shot.folder" = "Save folder"
 "settings.shot.open" = "Open"
 "settings.shot.change" = "Change…"

@@ -11,6 +11,7 @@ mod install;
 mod uninstall_linux;
 mod launcher;
 mod markup;
+mod notice;
 mod picker;
 mod picker_zoom;
 mod shot;
@@ -38,6 +39,7 @@ komutlar:
   toggle picker      renk seçiciyi aç/kapat
   toggle pin         öndeki pencereyi üstte tut / bırak
   toggle shot        ekran görüntüsü al
+  toggle ocr         seçilen alandaki metni kopyala
   settings           ayarlar penceresini aç
   quit               çalışan yaltri'yi kapat
   update             indirilen güncellemeyi kur ve yeniden başlat (yoksa denetle)
