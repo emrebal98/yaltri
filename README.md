@@ -40,6 +40,10 @@ and copy it as HEX, RGB, HSL, OKLCH or five other formats.
 
 Freeze the screen, pick an area, a window or a whole display, then copy it or save it as a PNG.
 
+### 🔤 Text extractor · `Super+Shift+X`
+
+Drag over any text on screen, even in an image or a video, and it is copied.
+
 ### 📌 Always on top · `Super+Shift+T`
 
 Keep the window you are working in above all others. Press the shortcut again to release it.
@@ -79,6 +83,7 @@ On GNOME the tray icon needs the AppIndicator extension (preinstalled on Ubuntu)
 | `Super+Shift+F` | Open search |
 | `Super+Shift+C` | Open the color picker |
 | `Super+Shift+S` | Take a screenshot |
+| `Super+Shift+X` | Copy the text in an area of the screen |
 | `Super+Shift+T` | Keep the focused window on top (again: release it) |
 
 Change shortcuts in the **Settings** window (right-click the tray icon → Settings).
@@ -130,6 +135,15 @@ for example all your games.
   since apps can't see where other windows are. KDE, Hyprland and other Wayland desktops show their
   own screenshot picker; the result is copied and saved.
 
+### Text extractor
+
+- Drag over the text; it is copied and a short message says how many lines.
+  The screenshot toolbar has the same action for an area you already selected.
+- Windows uses its built-in text recognition, offline, in every language you added in
+  **Settings › Time & language › Language** that has it.
+- Linux uses Tesseract: `sudo apt install tesseract-ocr tesseract-ocr-tur` (Turkish and English are used
+  when installed). Yaltri tells you when it is missing.
+
 ### Always on top
 
 - Works on Windows, GNOME, KDE Plasma, X11 desktops and Hyprland (where it pins the window).
@@ -145,6 +159,7 @@ yaltri toggle launcher    # open / close search
 yaltri toggle picker      # open the color picker
 yaltri toggle pin         # keep the focused window on top / release it
 yaltri toggle shot        # take a screenshot
+yaltri toggle ocr         # copy the text in an area
 yaltri settings           # open settings
 yaltri quit               # quit
 yaltri update             # install a downloaded update (or check for one)

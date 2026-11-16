@@ -40,6 +40,10 @@ HEX, RGB, HSL, OKLCH ya da beş başka formatta kopyala.
 
 Ekranı dondur, bir alan, pencere ya da tüm ekranı seç, sonra kopyala ya da PNG olarak kaydet.
 
+### 🔤 Metin çıkar · `Super+Shift+X`
+
+Ekrandaki herhangi bir metnin üstünden sürükle, resimde ya da videoda olsa bile kopyalanır.
+
 ### 📌 Üstte tut · `Super+Shift+T`
 
 Çalıştığın pencereyi diğer tüm pencerelerin üstünde tut. Kısayola tekrar basınca bırakılır.
@@ -79,6 +83,7 @@ GNOME'da tepsi ikonu için AppIndicator eklentisi gerekir (Ubuntu'da hazır geli
 | `Super+Shift+F` | Arama kutusunu açar |
 | `Super+Shift+C` | Renk seçiciyi açar |
 | `Super+Shift+S` | Ekran görüntüsü alır |
+| `Super+Shift+X` | Ekranın bir alanındaki metni kopyalar |
 | `Super+Shift+T` | Öndeki pencereyi üstte tutar (tekrar: bırakır) |
 
 Kısayolları **Ayarlar** penceresinden değiştirebilirsin (tepsi ikonuna sağ tık → Ayarlar).
@@ -129,6 +134,15 @@ Yazarken filtrelemek için başa kısaltma ve boşluk yaz: `/u ` uygulama, `/d `
   çünkü uygulamalar diğer pencerelerin yerini göremez. KDE, Hyprland ve diğer Wayland masaüstleri kendi
   seçim ekranını gösterir; sonuç kopyalanır ve kaydedilir.
 
+### Metin çıkar
+
+- Metnin üstünden sürükle; kopyalanır ve kısa bir mesaj kaç satır olduğunu söyler.
+  Ekran görüntüsü araç çubuğunda da, seçtiğin alan için aynı düğme var.
+- Windows kendi metin tanımasını kullanır, internetsiz; **Ayarlar › Saat ve dil › Dil**'de eklediğin ve
+  metin tanıması olan her dilde okur.
+- Linux Tesseract kullanır: `sudo apt install tesseract-ocr tesseract-ocr-tur` (kuruluysa Türkçe ve İngilizce).
+  Kurulu değilse Yaltri söyler.
+
 ### Üstte tut
 
 - Windows, GNOME, KDE Plasma, X11 masaüstleri ve Hyprland'de çalışır (Hyprland'de pencereyi sabitler).
@@ -144,6 +158,7 @@ yaltri toggle launcher    # arama kutusunu aç / kapat
 yaltri toggle picker      # renk seçiciyi aç
 yaltri toggle pin         # öndeki pencereyi üstte tut / bırak
 yaltri toggle shot        # ekran görüntüsü al
+yaltri toggle ocr         # bir alandaki metni kopyala
 yaltri settings           # ayarları aç
 yaltri quit               # kapat
 yaltri update             # inen güncellemeyi kur (yoksa denetle)
