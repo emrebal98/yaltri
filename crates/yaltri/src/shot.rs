@@ -10,10 +10,11 @@
 //! Other Wayland desktops: the desktop's own screenshot picker runs through
 //! the portal and its result is copied and saved directly.
 
+use std::ops::Range;
 use std::sync::Arc;
 
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Context, CursorStyle, InteractiveElement as _, IntoElement,
+    AnyWindowHandle, App, AppContext as _, Context, CursorStyle, FocusHandle, InteractiveElement as _, IntoElement,
     KeystrokeEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement as _, Pixels,
     Point, Render, RenderImage, StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Window,
     WindowBounds, WindowKind, WindowOptions, div, img, px,
@@ -219,6 +220,10 @@ pub struct ShotOverlay {
     /// Selection with the shapes drawn on it.
     composite: Option<Arc<RenderImage>>,
     dirty: bool,
+    /// Text typing goes through the platform's text input (IME, dead keys).
+    focus: FocusHandle,
+    /// IME composition inside the typed text (UTF-16).
+    marked: Option<Range<usize>>,
     _keys: Subscription,
 }
 
@@ -246,6 +251,8 @@ impl ShotOverlay {
             (display_origin.1 - client_origin.1) as f32 / scale,
         );
 
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
         let this_window = window.window_handle();
         let view = cx.entity().downgrade();
         let keys = cx.intercept_keystrokes(move |event: &KeystrokeEvent, window, cx| {
@@ -257,7 +264,7 @@ impl ShotOverlay {
             let handled = view
                 .update(cx, |this, cx| {
                     if this.typing && !ctrl {
-                        return this.type_key(&ks.key, ks.key_char.as_deref(), cx);
+                        return this.type_key(&ks.key, cx);
                     }
                     let free = this.tool.is_none() && !ctrl;
                     match ks.key.as_str() {
@@ -303,6 +310,8 @@ impl ShotOverlay {
             base: None,
             composite: None,
             dirty: false,
+            focus,
+            marked: None,
             _keys: keys,
         }
     }
@@ -345,7 +354,7 @@ impl ShotOverlay {
     }
 
     /// Keys while typing a text shape.
-    fn type_key(&mut self, key: &str, typed: Option<&str>, cx: &mut Context<Self>) -> bool {
+    fn type_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         match key {
             "escape" => {
                 self.drawing = None;
@@ -356,11 +365,10 @@ impl ShotOverlay {
                 if let Some(Shape::Text { text, .. }) = &mut self.drawing {
                     text.pop();
                 }
+                self.marked = None;
             }
-            _ => match (typed, &mut self.drawing) {
-                (Some(c), Some(Shape::Text { text, .. })) if !c.chars().any(char::is_control) => text.push_str(c),
-                _ => return false,
-            },
+            // Characters arrive through the input handler.
+            _ => return false,
         }
         self.dirty = true;
         cx.notify();
@@ -371,6 +379,7 @@ impl ShotOverlay {
     fn commit_text(&mut self) {
         if self.typing {
             self.typing = false;
+            self.marked = None;
             if let Some(shape) = self.drawing.take().filter(|s| !s.is_empty()) {
                 self.shapes.push(shape);
             }
@@ -731,6 +740,17 @@ impl Render for ShotOverlay {
         let composite = self.composite.clone().zip(self.selection).map(|(image, sel)| {
             img(image).absolute().left(px(sel.x)).top(px(sel.y)).w(px(sel.w)).h(px(sel.h)).object_fit(ObjectFit::Fill)
         });
+        let input = self.typing.then(|| {
+            let (focus, view) = (self.focus.clone(), cx.entity());
+            gpui_kit::canvas(
+                |_, _, _| {},
+                move |bounds, _, window, cx| {
+                    window.handle_input(&focus, gpui_kit::ElementInputHandler::new(bounds, view), cx);
+                },
+            )
+            .absolute()
+            .size_full()
+        });
         let cursor = match self.tool {
             Some(Tool::Text) => CursorStyle::IBeam,
             _ => CursorStyle::Crosshair,
@@ -744,6 +764,7 @@ impl Render for ShotOverlay {
             .object_fit(ObjectFit::Fill);
         div()
             .id("shot")
+            .track_focus(&self.focus)
             .size_full()
             .relative()
             .overflow_hidden()
@@ -759,12 +780,130 @@ impl Render for ShotOverlay {
             .children(size_label)
             .child(self.mode_bar(p, cx))
             .children(toolbar)
+            .children(input)
+    }
+}
+
+impl ShotOverlay {
+    fn typed_text(&self) -> Option<&String> {
+        match &self.drawing {
+            Some(Shape::Text { text, .. }) if self.typing => Some(text),
+            _ => None,
+        }
+    }
+
+    /// Replaces a UTF-16 range of the typed text; returns where the new text
+    /// starts (UTF-16).
+    fn splice(&mut self, range: Option<Range<usize>>, new: &str) -> usize {
+        let Some(Shape::Text { text, .. }) = &mut self.drawing else { return 0 };
+        let len = utf16_len(text);
+        let range = range.or_else(|| self.marked.clone()).unwrap_or(len..len);
+        let (start, end) = (utf16_to_byte(text, range.start), utf16_to_byte(text, range.end.max(range.start)));
+        text.replace_range(start..end, new);
+        self.dirty = true;
+        range.start
+    }
+}
+
+fn utf16_len(text: &str) -> usize {
+    text.chars().map(char::len_utf16).sum()
+}
+
+/// Byte offset of a UTF-16 offset (clamped to the end).
+fn utf16_to_byte(text: &str, utf16: usize) -> usize {
+    let mut seen = 0;
+    for (byte, c) in text.char_indices() {
+        if seen >= utf16 {
+            return byte;
+        }
+        seen += c.len_utf16();
+    }
+    text.len()
+}
+
+impl gpui_kit::EntityInputHandler for ShotOverlay {
+    fn text_for_range(
+        &mut self,
+        range: Range<usize>,
+        adjusted: &mut Option<Range<usize>>,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> Option<String> {
+        let text = self.typed_text()?;
+        let (start, end) = (utf16_to_byte(text, range.start), utf16_to_byte(text, range.end));
+        *adjusted = Some(range);
+        Some(text[start..end.max(start)].to_owned())
+    }
+
+    fn selected_text_range(&mut self, _: bool, _: &mut Window, _: &mut Context<Self>) -> Option<gpui_kit::UTF16Selection> {
+        let len = utf16_len(self.typed_text()?);
+        Some(gpui_kit::UTF16Selection { range: len..len, reversed: false })
+    }
+
+    fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
+        self.marked.clone()
+    }
+
+    fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
+        self.marked = None;
+    }
+
+    fn replace_text_in_range(&mut self, range: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {
+        if self.typed_text().is_none() || text.chars().any(char::is_control) {
+            return;
+        }
+        self.splice(range, text);
+        self.marked = None;
+        cx.notify();
+    }
+
+    fn replace_and_mark_text_in_range(
+        &mut self,
+        range: Option<Range<usize>>,
+        text: &str,
+        _: Option<Range<usize>>,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.typed_text().is_none() {
+            return;
+        }
+        let start = self.splice(range, text);
+        let len = utf16_len(text);
+        self.marked = (len > 0).then_some(start..start + len);
+        cx.notify();
+    }
+
+    fn bounds_for_range(
+        &mut self,
+        _: Range<usize>,
+        element_bounds: gpui_kit::Bounds<Pixels>,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> Option<gpui_kit::Bounds<Pixels>> {
+        let (Some(Shape::Text { at, .. }), Some(sel)) = (&self.drawing, self.selection) else { return None };
+        let origin = element_bounds.origin + gpui_kit::point(px(sel.x + at.0), px(sel.y + at.1));
+        Some(gpui_kit::Bounds::new(origin, gpui_kit::size(px(2.), px(24.))))
+    }
+
+    fn character_index_for_point(&mut self, _: Point<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<usize> {
+        None
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn converts_utf16_offsets_to_bytes() {
+        let text = "aç😀b";
+        assert_eq!(utf16_len(text), 5);
+        assert_eq!(utf16_to_byte(text, 0), 0);
+        assert_eq!(utf16_to_byte(text, 2), 3);
+        assert_eq!(utf16_to_byte(text, 4), 7);
+        assert_eq!(utf16_to_byte(text, 9), text.len());
+    }
 
     #[test]
     fn spans_corners_in_any_order() {
