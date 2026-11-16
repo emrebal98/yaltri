@@ -148,6 +148,7 @@
 "uninstall.delete_data" = "Yaltri'nin ayarları, arama geçmişi ve kayıtlı renkleri de silinsin mi?"
 "uninstall.yes_no" = "[e/H]"
 "uninstall.done" = "Yaltri kaldırıldı."
+"cli.started" = "Yaltri arka planda çalışıyor. Kapatmak için: `yaltri quit`."
 "uninstall.binary_kept" = "{path} install.sh ile kurulmadığı için yerinde bırakıldı; kurduğun yolla kaldır."
 "color.coral" = "Mercan"
 "color.rose" = "Gül"

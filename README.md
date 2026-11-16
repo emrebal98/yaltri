@@ -111,6 +111,7 @@ for example all your games.
 
 ```sh
 yaltri                    # start in the background
+yaltri --foreground       # stay in the terminal, with logs
 yaltri toggle launcher    # open / close search
 yaltri toggle picker      # open the color picker
 yaltri settings           # open settings
