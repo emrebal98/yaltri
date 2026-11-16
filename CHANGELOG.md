@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/emrebal98/yaltri/compare/v0.3.2...v0.4.0) (2026-11-16)
+
+
+### Features
+
+* **linux:** leave the terminal when started from one ([#43](https://github.com/emrebal98/yaltri/issues/43)) ([b75c6b8](https://github.com/emrebal98/yaltri/commit/b75c6b8b21f63b535fce7e5ba85bb534f469544a))
+
+
+### Bug Fixes
+
+* **linux:** restore autostart after a reinstall ([#42](https://github.com/emrebal98/yaltri/issues/42)) ([63adc13](https://github.com/emrebal98/yaltri/commit/63adc1323eea590a958dfb7816c6c5b57e646277))
+
 ## [0.3.2](https://github.com/emrebal98/yaltri/compare/v0.3.1...v0.3.2) (2026-11-16)
 
 
