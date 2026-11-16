@@ -10,19 +10,22 @@
 //! Other Wayland desktops: the desktop's own screenshot picker runs through
 //! the portal and its result is copied and saved directly.
 
+use std::ops::Range;
 use std::sync::Arc;
 
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Context, CursorStyle, InteractiveElement as _, IntoElement,
+    AnyWindowHandle, App, AppContext as _, Context, CursorStyle, FocusHandle, InteractiveElement as _, IntoElement,
     KeystrokeEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement as _, Pixels,
     Point, Render, RenderImage, StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Window,
     WindowBounds, WindowKind, WindowOptions, div, img, px,
 };
+use gpui_kit::prelude::FluentBuilder as _;
 use yaltri_platform::screen::{self, Screenshot};
 use yaltri_platform::windows_list::{self, WinRect};
 
 use crate::daemon::Daemon;
 use crate::i18n::t;
+use crate::markup::{self, Pt, Shape, Tool};
 use crate::shot_output::{self, Action};
 use crate::theme::{self, Palette};
 use crate::ui::{self, TextStyle as _};
@@ -32,8 +35,21 @@ const DIM: f32 = 0.45;
 /// Drags shorter than this (logical px) are clicks, not selections.
 const MIN_DRAG: f32 = 4.;
 const BAR_GAP: f32 = 8.;
-const TOOLBAR_W: f32 = 3. * 32. + 2. * 4. + 2. * 6.;
-const TOOLBAR_H: f32 = 32. + 2. * 6.;
+const BUTTON: f32 = 32.;
+const SWATCH: f32 = 24.;
+const WIDTH_BUTTON: f32 = 28.;
+const GAP: f32 = 4.;
+const TOOLBAR_H: f32 = BUTTON + 2. * 6. + 2.;
+
+/// Tools, separator, colours, widths, separator, undo, separator, copy /
+/// save / cancel.
+fn toolbar_width() -> f32 {
+    let tools = Tool::ALL.len() as f32 * BUTTON;
+    let colors = markup::COLORS.len() as f32 * SWATCH;
+    let widths = markup::WIDTHS.len() as f32 * WIDTH_BUTTON;
+    let items = Tool::ALL.len() + markup::COLORS.len() + markup::WIDTHS.len() + 4 + 3;
+    tools + colors + widths + 4. * BUTTON + 3. + (items as f32 - 1.) * GAP + 2. * 6. + 2.
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -191,6 +207,23 @@ pub struct ShotOverlay {
     selection: Option<LRect>,
     /// What a click would select in window / full screen mode.
     hover: Option<LRect>,
+    /// Drawing tool in use; while set, the selection stays put.
+    tool: Option<Tool>,
+    color: u32,
+    width: f32,
+    shapes: Vec<Shape>,
+    /// The shape being dragged out or typed.
+    drawing: Option<Shape>,
+    typing: bool,
+    /// The selection's pixels, taken when the first shape starts.
+    base: Option<Screenshot>,
+    /// Selection with the shapes drawn on it.
+    composite: Option<Arc<RenderImage>>,
+    dirty: bool,
+    /// Text typing goes through the platform's text input (IME, dead keys).
+    focus: FocusHandle,
+    /// IME composition inside the typed text (UTF-16).
+    marked: Option<Range<usize>>,
     _keys: Subscription,
 }
 
@@ -218,6 +251,8 @@ impl ShotOverlay {
             (display_origin.1 - client_origin.1) as f32 / scale,
         );
 
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
         let this_window = window.window_handle();
         let view = cx.entity().downgrade();
         let keys = cx.intercept_keystrokes(move |event: &KeystrokeEvent, window, cx| {
@@ -227,18 +262,25 @@ impl ShotOverlay {
             let ks = &event.keystroke;
             let ctrl = ks.modifiers.control || ks.modifiers.platform;
             let handled = view
-                .update(cx, |this, cx| match ks.key.as_str() {
-                    "escape" => {
-                        close(cx);
-                        true
+                .update(cx, |this, cx| {
+                    if this.typing && !ctrl {
+                        return this.type_key(&ks.key, cx);
                     }
-                    "enter" => this.finish(Action::Copy, cx),
-                    "c" if ctrl => this.finish(Action::Copy, cx),
-                    "s" if ctrl => this.finish(Action::Save, cx),
-                    "r" if !ctrl => this.set_mode(Mode::Rect, cx),
-                    "w" if !ctrl && this.window_mode => this.set_mode(Mode::Window, cx),
-                    "f" if !ctrl => this.set_mode(Mode::Screen, cx),
-                    _ => false,
+                    let free = this.tool.is_none() && !ctrl;
+                    match ks.key.as_str() {
+                        "escape" => {
+                            close(cx);
+                            true
+                        }
+                        "enter" => this.finish(Action::Copy, cx),
+                        "c" if ctrl => this.finish(Action::Copy, cx),
+                        "s" if ctrl => this.finish(Action::Save, cx),
+                        "z" if ctrl => this.undo(cx),
+                        "r" if free => this.set_mode(Mode::Rect, cx),
+                        "w" if free && this.window_mode => this.set_mode(Mode::Window, cx),
+                        "f" if free => this.set_mode(Mode::Screen, cx),
+                        _ => false,
+                    }
                 })
                 .unwrap_or(false);
             if handled {
@@ -259,6 +301,17 @@ impl ShotOverlay {
             drag_from: None,
             selection: None,
             hover: None,
+            tool: None,
+            color: markup::COLORS[0],
+            width: markup::WIDTHS[1],
+            shapes: Vec::new(),
+            drawing: None,
+            typing: false,
+            base: None,
+            composite: None,
+            dirty: false,
+            focus,
+            marked: None,
             _keys: keys,
         }
     }
@@ -268,7 +321,109 @@ impl ShotOverlay {
         self.selection = None;
         self.hover = None;
         self.drag_from = None;
+        self.clear_markup();
         cx.notify();
+        true
+    }
+
+    /// Drops every shape (the selection changed).
+    fn clear_markup(&mut self) {
+        self.tool = None;
+        self.shapes.clear();
+        self.drawing = None;
+        self.typing = false;
+        self.base = None;
+        self.dirty = true;
+    }
+
+    /// Picks a drawing tool, or puts it down when it is already in hand.
+    fn toggle_tool(&mut self, tool: Tool, cx: &mut Context<Self>) {
+        self.commit_text();
+        self.tool = (self.tool != Some(tool)).then_some(tool);
+        cx.notify();
+    }
+
+    fn undo(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.drawing.take().is_none() {
+            self.shapes.pop();
+        }
+        self.typing = false;
+        self.dirty = true;
+        cx.notify();
+        true
+    }
+
+    /// Keys while typing a text shape.
+    fn type_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        match key {
+            "escape" => {
+                self.drawing = None;
+                self.typing = false;
+            }
+            "enter" => self.commit_text(),
+            "backspace" => {
+                if let Some(Shape::Text { text, .. }) = &mut self.drawing {
+                    text.pop();
+                }
+                self.marked = None;
+            }
+            // Characters arrive through the input handler.
+            _ => return false,
+        }
+        self.dirty = true;
+        cx.notify();
+        true
+    }
+
+    /// Keeps the text being typed, if any.
+    fn commit_text(&mut self) {
+        if self.typing {
+            self.typing = false;
+            self.marked = None;
+            if let Some(shape) = self.drawing.take().filter(|s| !s.is_empty()) {
+                self.shapes.push(shape);
+            }
+            self.dirty = true;
+        }
+    }
+
+    /// The selected pixels of the frozen desktop.
+    fn selection_pixels(&self) -> Option<Screenshot> {
+        let sel = self.selection?;
+        let s = self.scale;
+        let x = self.client_origin.0 + (sel.x * s).round() as i32;
+        let y = self.client_origin.1 + (sel.y * s).round() as i32;
+        let part = self.shot.crop(x, y, (sel.w * s).round() as u32, (sel.h * s).round() as u32);
+        (part.width > 0 && part.height > 0).then_some(part)
+    }
+
+    /// `pos` relative to the selection, kept inside it.
+    fn local(sel: LRect, pos: Point<Pixels>) -> Pt {
+        ((pos.x.as_f32() - sel.x).clamp(0., sel.w), (pos.y.as_f32() - sel.y).clamp(0., sel.h))
+    }
+
+    /// Starts a shape when a tool is in hand. `true` when the click was used.
+    fn start_shape(&mut self, pos: Point<Pixels>) -> bool {
+        let (Some(tool), Some(sel)) = (self.tool, self.selection) else { return false };
+        self.commit_text();
+        let (x, y) = (pos.x.as_f32(), pos.y.as_f32());
+        if x < sel.x || y < sel.y || x > sel.x + sel.w || y > sel.y + sel.h {
+            return true;
+        }
+        if self.base.is_none() {
+            self.base = self.selection_pixels();
+        }
+        let next = markup::next_number(&self.shapes);
+        let shape = Shape::start(tool, Self::local(sel, pos), self.color, self.width, next);
+        match tool {
+            Tool::Number => self.shapes.push(shape),
+            Tool::Text => {
+                self.drawing = Some(shape);
+                self.typing = true;
+            }
+            _ => self.drawing = Some(shape),
+        }
+        self.dirty = true;
         true
     }
 
@@ -304,6 +459,11 @@ impl ShotOverlay {
     }
 
     fn on_down(&mut self, event: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.start_shape(event.position) {
+            cx.notify();
+            return;
+        }
+        self.clear_markup();
         match self.mode {
             Mode::Rect => {
                 self.drag_from = Some(event.position);
@@ -315,7 +475,13 @@ impl ShotOverlay {
     }
 
     fn on_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(from) = self.drag_from {
+        if !self.typing
+            && let (Some(shape), Some(sel)) = (self.drawing.as_mut(), self.selection)
+        {
+            shape.drag_to(Self::local(sel, event.position), event.modifiers.shift);
+            self.dirty = true;
+            cx.notify();
+        } else if let Some(from) = self.drag_from {
             let (w, h) = self.area();
             self.selection = LRect::spanning(
                 (from.x.as_f32(), from.y.as_f32()),
@@ -333,7 +499,13 @@ impl ShotOverlay {
     }
 
     fn on_up(&mut self, _: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.drag_from.take().is_some() {
+        if !self.typing && self.drawing.is_some() {
+            if let Some(shape) = self.drawing.take().filter(|s| !s.is_empty()) {
+                self.shapes.push(shape);
+            }
+            self.dirty = true;
+            cx.notify();
+        } else if self.drag_from.take().is_some() {
             if self.selection.is_some_and(|s| s.w < MIN_DRAG || s.h < MIN_DRAG) {
                 self.selection = None;
             }
@@ -344,14 +516,17 @@ impl ShotOverlay {
     /// Hands the selected pixels to the output; `false` when nothing is
     /// selected.
     fn finish(&mut self, action: Action, cx: &mut Context<Self>) -> bool {
-        let Some(sel) = self.selection.filter(|_| self.drag_from.is_none()) else { return false };
-        let s = self.scale;
-        let x = self.client_origin.0 + (sel.x * s).round() as i32;
-        let y = self.client_origin.1 + (sel.y * s).round() as i32;
-        let part = self.shot.crop(x, y, (sel.w * s).round() as u32, (sel.h * s).round() as u32);
-        if part.width == 0 || part.height == 0 {
+        if self.drag_from.is_some() {
             return false;
         }
+        self.commit_text();
+        let part = match (&self.base, self.shapes.is_empty()) {
+            (Some(base), false) => markup::render(base, &self.shapes, self.scale, false),
+            _ => match self.selection_pixels() {
+                Some(part) => part,
+                None => return false,
+            },
+        };
         close(cx);
         shot_output::finish(action, part, cx);
         true
@@ -387,13 +562,74 @@ impl ShotOverlay {
     }
 
     fn toolbar(&self, sel: LRect, p: &Palette, cx: &mut Context<Self>) -> gpui_kit::Stateful<gpui_kit::Div> {
-        let (x, y) = toolbar_position(sel, (TOOLBAR_W, TOOLBAR_H), self.area());
+        let (x, y) = toolbar_position(sel, (toolbar_width(), TOOLBAR_H), self.area());
+        let tools = Tool::ALL.into_iter().enumerate().map(|(i, tool)| {
+            let active = self.tool == Some(tool);
+            div()
+                .id(("shot-tool", i))
+                .size(px(BUTTON))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(6.))
+                .cursor_pointer()
+                .when(active, |d| d.bg(p.list_active))
+                .hover(|s| s.bg(p.list_hover))
+                .child(ui::icon(tool.icon(), 16., if active { p.accent_strong } else { p.foreground }))
+                .on_click(cx.listener(move |this, _, _, cx| this.toggle_tool(tool, cx)))
+        });
+        let colors = markup::COLORS.into_iter().enumerate().map(|(i, color)| {
+            let active = self.color == color;
+            div()
+                .id(("shot-color", i))
+                .size(px(SWATCH))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .cursor_pointer()
+                .border_2()
+                .border_color(if active { p.accent } else { gpui_kit::transparent_black() })
+                .child(div().size(px(14.)).rounded_full().border_1().border_color(p.border_strong).bg(gpui_kit::rgb(color)))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.color = color;
+                    cx.notify();
+                }))
+        });
+        let widths = markup::WIDTHS.into_iter().enumerate().map(|(i, width)| {
+            let active = self.width == width;
+            div()
+                .id(("shot-width", i))
+                .size(px(WIDTH_BUTTON))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(6.))
+                .cursor_pointer()
+                .when(active, |d| d.bg(p.list_active))
+                .hover(|s| s.bg(p.list_hover))
+                .child(div().size(px(width + 2.)).rounded_full().bg(p.foreground))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.width = width;
+                    cx.notify();
+                }))
+        });
+        let separator = || div().w(px(1.)).h(px(20.)).bg(p.border);
         bar(p)
             .id("shot-toolbar")
             .absolute()
             .left(px(x))
             .top(px(y))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .children(tools)
+            .child(separator())
+            .children(colors)
+            .children(widths)
+            .child(separator())
+            .child(tool_button("shot-undo", "undo-2", p).on_click(cx.listener(|this, _, _, cx| {
+                this.undo(cx);
+            })))
+            .child(separator())
             .child(tool_button("shot-copy", "copy", p).on_click(cx.listener(|this, _, _, cx| {
                 this.finish(Action::Copy, cx);
             })))
@@ -485,6 +721,40 @@ impl Render for ShotOverlay {
         });
         let size_label = self.selection.map(|s| self.size_label(s, p));
         let toolbar = self.selection.filter(|_| self.drag_from.is_none()).map(|s| self.toolbar(s, p, cx));
+        if self.dirty {
+            self.dirty = false;
+            let mut all = self.shapes.clone();
+            all.extend(self.drawing.clone());
+            let next = match (&self.base, all.is_empty()) {
+                (Some(base), false) => {
+                    let out = markup::render(base, &all, self.scale, self.typing);
+                    image::RgbaImage::from_raw(out.width, out.height, out.bgra)
+                        .map(|frame| Arc::new(RenderImage::new(vec![image::Frame::new(frame)])))
+                }
+                _ => None,
+            };
+            if let Some(old) = std::mem::replace(&mut self.composite, next) {
+                let _ = window.drop_image(old);
+            }
+        }
+        let composite = self.composite.clone().zip(self.selection).map(|(image, sel)| {
+            img(image).absolute().left(px(sel.x)).top(px(sel.y)).w(px(sel.w)).h(px(sel.h)).object_fit(ObjectFit::Fill)
+        });
+        let input = self.typing.then(|| {
+            let (focus, view) = (self.focus.clone(), cx.entity());
+            gpui_kit::canvas(
+                |_, _, _| {},
+                move |bounds, _, window, cx| {
+                    window.handle_input(&focus, gpui_kit::ElementInputHandler::new(bounds, view), cx);
+                },
+            )
+            .absolute()
+            .size_full()
+        });
+        let cursor = match self.tool {
+            Some(Tool::Text) => CursorStyle::IBeam,
+            _ => CursorStyle::Crosshair,
+        };
         let image = img(self.image.clone())
             .absolute()
             .left(px(self.image_offset.0))
@@ -494,26 +764,146 @@ impl Render for ShotOverlay {
             .object_fit(ObjectFit::Fill);
         div()
             .id("shot")
+            .track_focus(&self.focus)
             .size_full()
             .relative()
             .overflow_hidden()
-            .cursor(CursorStyle::Crosshair)
+            .cursor(cursor)
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_down))
             .on_mouse_move(cx.listener(Self::on_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_up))
             .on_mouse_down(MouseButton::Right, |_, _, cx| close(cx))
             .child(image)
+            .children(composite)
             .children(dim)
             .children(outline)
             .children(size_label)
             .child(self.mode_bar(p, cx))
             .children(toolbar)
+            .children(input)
+    }
+}
+
+impl ShotOverlay {
+    fn typed_text(&self) -> Option<&String> {
+        match &self.drawing {
+            Some(Shape::Text { text, .. }) if self.typing => Some(text),
+            _ => None,
+        }
+    }
+
+    /// Replaces a UTF-16 range of the typed text; returns where the new text
+    /// starts (UTF-16).
+    fn splice(&mut self, range: Option<Range<usize>>, new: &str) -> usize {
+        let Some(Shape::Text { text, .. }) = &mut self.drawing else { return 0 };
+        let len = utf16_len(text);
+        let range = range.or_else(|| self.marked.clone()).unwrap_or(len..len);
+        let (start, end) = (utf16_to_byte(text, range.start), utf16_to_byte(text, range.end.max(range.start)));
+        text.replace_range(start..end, new);
+        self.dirty = true;
+        range.start
+    }
+}
+
+fn utf16_len(text: &str) -> usize {
+    text.chars().map(char::len_utf16).sum()
+}
+
+/// Byte offset of a UTF-16 offset (clamped to the end).
+fn utf16_to_byte(text: &str, utf16: usize) -> usize {
+    let mut seen = 0;
+    for (byte, c) in text.char_indices() {
+        if seen >= utf16 {
+            return byte;
+        }
+        seen += c.len_utf16();
+    }
+    text.len()
+}
+
+impl gpui_kit::EntityInputHandler for ShotOverlay {
+    fn text_for_range(
+        &mut self,
+        range: Range<usize>,
+        adjusted: &mut Option<Range<usize>>,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> Option<String> {
+        let text = self.typed_text()?;
+        let (start, end) = (utf16_to_byte(text, range.start), utf16_to_byte(text, range.end));
+        *adjusted = Some(range);
+        Some(text[start..end.max(start)].to_owned())
+    }
+
+    fn selected_text_range(&mut self, _: bool, _: &mut Window, _: &mut Context<Self>) -> Option<gpui_kit::UTF16Selection> {
+        let len = utf16_len(self.typed_text()?);
+        Some(gpui_kit::UTF16Selection { range: len..len, reversed: false })
+    }
+
+    fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
+        self.marked.clone()
+    }
+
+    fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
+        self.marked = None;
+    }
+
+    fn replace_text_in_range(&mut self, range: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {
+        if self.typed_text().is_none() || text.chars().any(char::is_control) {
+            return;
+        }
+        self.splice(range, text);
+        self.marked = None;
+        cx.notify();
+    }
+
+    fn replace_and_mark_text_in_range(
+        &mut self,
+        range: Option<Range<usize>>,
+        text: &str,
+        _: Option<Range<usize>>,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.typed_text().is_none() {
+            return;
+        }
+        let start = self.splice(range, text);
+        let len = utf16_len(text);
+        self.marked = (len > 0).then_some(start..start + len);
+        cx.notify();
+    }
+
+    fn bounds_for_range(
+        &mut self,
+        _: Range<usize>,
+        element_bounds: gpui_kit::Bounds<Pixels>,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> Option<gpui_kit::Bounds<Pixels>> {
+        let (Some(Shape::Text { at, .. }), Some(sel)) = (&self.drawing, self.selection) else { return None };
+        let origin = element_bounds.origin + gpui_kit::point(px(sel.x + at.0), px(sel.y + at.1));
+        Some(gpui_kit::Bounds::new(origin, gpui_kit::size(px(2.), px(24.))))
+    }
+
+    fn character_index_for_point(&mut self, _: Point<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<usize> {
+        None
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn converts_utf16_offsets_to_bytes() {
+        let text = "aç😀b";
+        assert_eq!(utf16_len(text), 5);
+        assert_eq!(utf16_to_byte(text, 0), 0);
+        assert_eq!(utf16_to_byte(text, 2), 3);
+        assert_eq!(utf16_to_byte(text, 4), 7);
+        assert_eq!(utf16_to_byte(text, 9), text.len());
+    }
 
     #[test]
     fn spans_corners_in_any_order() {

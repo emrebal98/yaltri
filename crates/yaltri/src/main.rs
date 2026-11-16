@@ -10,6 +10,7 @@ mod install;
 #[cfg(target_os = "linux")]
 mod uninstall_linux;
 mod launcher;
+mod markup;
 mod picker;
 mod picker_zoom;
 mod shot;
