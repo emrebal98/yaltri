@@ -50,7 +50,9 @@ pub fn send_to_daemon(cmd: Option<Command>) -> Result<Delivery> {
     let line = cmd.map_or_else(|| PING.to_owned(), |c| c.to_string());
     stream.get_mut().write_all(format!("{line}\n").as_bytes())?;
     let mut reply = String::new();
-    stream.read_line(&mut reply)?;
+    if stream.read_line(&mut reply)? == 0 {
+        return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into());
+    }
     match reply.trim() {
         "ok" => Ok(Delivery::Delivered),
         other => bail!("daemon rejected command: {other}"),
@@ -67,13 +69,27 @@ pub fn quit_daemon(timeout: std::time::Duration) -> Result<()> {
         return Ok(());
     }
     let start = std::time::Instant::now();
-    while send_to_daemon(None)? == Delivery::Delivered {
+    loop {
+        match send_to_daemon(None) {
+            Ok(Delivery::NoDaemon) => return Ok(()),
+            Ok(Delivery::Delivered) => {}
+            // It exited holding our connection: on its way out.
+            Err(e) if dropped_by_peer(&e) => {}
+            Err(e) => return Err(e),
+        }
         if start.elapsed() >= timeout {
             bail!("the running Yaltri did not quit");
         }
         thread::sleep(std::time::Duration::from_millis(100));
     }
-    Ok(())
+}
+
+/// Whether `e` is the daemon closing the connection before it answered,
+/// as an exiting daemon does with the connections still queued for it.
+fn dropped_by_peer(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<io::Error>().is_some_and(|e| {
+        matches!(e.kind(), io::ErrorKind::ConnectionReset | io::ErrorKind::BrokenPipe | io::ErrorKind::UnexpectedEof)
+    })
 }
 
 fn allow_daemon_to_take_focus() {
@@ -132,4 +148,20 @@ fn handle(conn: Stream, tx: &CommandSender) -> io::Result<()> {
         }
     };
     conn.get_mut().write_all(format!("{reply}\n").as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dropped_connection_means_the_daemon_is_leaving() {
+        for kind in [io::ErrorKind::ConnectionReset, io::ErrorKind::BrokenPipe, io::ErrorKind::UnexpectedEof] {
+            assert!(dropped_by_peer(&io::Error::from(kind).into()), "{kind:?}");
+        }
+        let wrapped = anyhow::Error::from(io::Error::from(io::ErrorKind::ConnectionReset)).context("pinging");
+        assert!(dropped_by_peer(&wrapped));
+        assert!(!dropped_by_peer(&io::Error::from(io::ErrorKind::PermissionDenied).into()));
+        assert!(!dropped_by_peer(&anyhow::anyhow!("daemon rejected command: err x")));
+    }
 }
