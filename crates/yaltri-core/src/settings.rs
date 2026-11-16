@@ -19,6 +19,7 @@ pub struct Settings {
     pub files: FilesSettings,
     pub games: GamesSettings,
     pub picker: PickerSettings,
+    pub pin: PinSettings,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -96,6 +97,14 @@ pub struct PickerSettings {
     pub open_editor: bool,
 }
 
+/// Always on top: the shortcut toggles it for the focused window.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PinSettings {
+    pub enabled: bool,
+    pub hotkey: String,
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -105,6 +114,7 @@ impl Default for Settings {
             files: FilesSettings::default(),
             games: GamesSettings::default(),
             picker: PickerSettings::default(),
+            pin: PinSettings::default(),
         }
     }
 }
@@ -136,6 +146,12 @@ impl Default for FilesSettings {
                 .map(String::from)
                 .to_vec(),
         }
+    }
+}
+
+impl Default for PinSettings {
+    fn default() -> Self {
+        Self { enabled: true, hotkey: "Super+Shift+T".into() }
     }
 }
 
@@ -208,6 +224,7 @@ impl Settings {
         match tool {
             ToolId::Launcher => self.launcher.enabled,
             ToolId::Picker => self.picker.enabled,
+            ToolId::Pin => self.pin.enabled,
         }
     }
 
@@ -215,6 +232,7 @@ impl Settings {
         match tool {
             ToolId::Launcher => self.launcher.enabled = enabled,
             ToolId::Picker => self.picker.enabled = enabled,
+            ToolId::Pin => self.pin.enabled = enabled,
         }
     }
 
@@ -222,6 +240,7 @@ impl Settings {
         match tool {
             ToolId::Launcher => &self.launcher.hotkey,
             ToolId::Picker => &self.picker.hotkey,
+            ToolId::Pin => &self.pin.hotkey,
         }
     }
 
@@ -229,6 +248,7 @@ impl Settings {
         match tool {
             ToolId::Launcher => self.launcher.hotkey = hotkey,
             ToolId::Picker => self.picker.hotkey = hotkey,
+            ToolId::Pin => self.pin.hotkey = hotkey,
         }
     }
 
@@ -337,6 +357,17 @@ mod tests {
         assert!(s.hotkey_conflicts().is_empty(), "disabled tools never conflict");
         s.picker.enabled = true;
         assert_eq!(s.hotkey_conflicts(), vec![(ToolId::Launcher, ToolId::Picker)]);
+    }
+
+    #[test]
+    fn pin_defaults_to_super_shift_t_without_conflicts() {
+        let s = Settings::default();
+        assert_eq!(s.pin, PinSettings { enabled: true, hotkey: "Super+Shift+T".into() });
+        assert!(s.hotkey_conflicts().is_empty());
+        let old: Settings = toml::from_str("[launcher]
+enabled = true
+").unwrap();
+        assert_eq!(old.pin, PinSettings::default(), "older files get the pin defaults");
     }
 
     #[test]
