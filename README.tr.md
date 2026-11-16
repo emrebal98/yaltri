@@ -36,6 +36,10 @@ HEX, RGB, HSL, OKLCH ya da beş başka formatta kopyala.
 
 <p align="center"><img src="docs/media/color-picker.gif" width="720" alt="Renk seçme: kod ve ad imleci izler, fare tekerleği bir köşede büyüteci açar, tıklayınca editör dokuz formatı ve geçmişi gösterir"></p>
 
+### 📌 Üstte tut · `Super+Shift+T`
+
+Çalıştığın pencereyi diğer tüm pencerelerin üstünde tut. Kısayola tekrar basınca bırakılır.
+
 Her araç **Ayarlar**'dan kapatılabilir.
 
 ---
@@ -70,6 +74,7 @@ GNOME'da tepsi ikonu için AppIndicator eklentisi gerekir (Ubuntu'da hazır geli
 |---|---|
 | `Super+Shift+F` | Arama kutusunu açar |
 | `Super+Shift+C` | Renk seçiciyi açar |
+| `Super+Shift+T` | Öndeki pencereyi üstte tutar (tekrar: bırakır) |
 
 Kısayolları **Ayarlar** penceresinden değiştirebilirsin (tepsi ikonuna sağ tık → Ayarlar).
 Yaltri ilk açılıştan itibaren sistemle birlikte başlar; **Ayarlar → Genel → Sistem açılışında başlat**'tan kapatabilirsin.
@@ -106,6 +111,12 @@ Yazarken filtrelemek için başa kısaltma ve boşluk yaz: `/u ` uygulama, `/d `
   HEX, RGB, HSL, HSV, OKLCH, CMYK, HWB, Decimal, Float.
   Seçimde kopyalanacak format **Ayarlar → Renk seçici**'den belirlenir.
 
+### Üstte tut
+
+- Windows, GNOME, KDE Plasma, X11 masaüstleri ve Hyprland'de çalışır (Hyprland'de pencereyi sabitler).
+- GNOME'da kısayol GNOME'un kendi "Her zaman üstte" tuşu olur, bu yüzden her pencerede çalışır.
+- Yönetici olarak çalışan pencereler normal Yaltri'den sabitlenemez.
+
 ### Komut satırı
 
 ```sh
@@ -113,6 +124,7 @@ yaltri                    # arka planda başlat
 yaltri --foreground       # terminalde kal, loglar burada
 yaltri toggle launcher    # arama kutusunu aç / kapat
 yaltri toggle picker      # renk seçiciyi aç
+yaltri toggle pin         # öndeki pencereyi üstte tut / bırak
 yaltri settings           # ayarları aç
 yaltri quit               # kapat
 yaltri update             # inen güncellemeyi kur (yoksa denetle)
