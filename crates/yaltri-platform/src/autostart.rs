@@ -26,8 +26,10 @@ pub fn set_enabled(on: bool) -> Result<()> {
 /// Linux: writes `~/.local/share/applications/<APP_ID>.desktop` and the app
 /// icon into the user's icon theme (only what changed), and refreshes an
 /// existing startup entry. Desktops find a program's icon through these.
+/// Returns whether the application entry was missing: a fresh install, or a
+/// reinstall after `yaltri uninstall` removed it.
 #[cfg(not(windows))]
-pub fn install_app_entry(icon_svg: &str) -> Result<()> {
+pub fn install_app_entry(icon_svg: &str) -> Result<bool> {
     let exe = std::env::current_exe().context("locating the yaltri executable")?;
     imp::install_app_entry(&exe, icon_svg)
 }
@@ -191,8 +193,9 @@ mod imp {
         data.join("applications").join(format!("{}.desktop", crate::APP_ID))
     }
 
-    pub fn install_app_entry(exe: &Path, icon_svg: &str) -> Result<()> {
+    pub fn install_app_entry(exe: &Path, icon_svg: &str) -> Result<bool> {
         let data = data_home().context("no home directory")?;
+        let fresh = lacks_app_entry(&data);
         // Also in the theme under its name, for programs that look it up there.
         write_if_changed(&icon_file().context("no home directory")?, icon_svg.as_bytes())?;
         let entry = app_entry(exe, &icon_value());
@@ -202,7 +205,12 @@ mod imp {
         if is_enabled() {
             set_enabled(true, exe)?;
         }
-        Ok(())
+        Ok(fresh)
+    }
+
+    /// No application entry under either name in `data`.
+    fn lacks_app_entry(data: &Path) -> bool {
+        !app_entry_file(data).exists() && !data.join(LEGACY_APP_ENTRY).exists()
     }
 
     pub fn remove_app_entry() -> Result<()> {
@@ -271,6 +279,20 @@ mod imp {
             let entry = desktop_entry(Path::new("/home/a b/.local/bin/yaltri"), "yaltri");
             assert!(entry.contains("Exec=\"/home/a b/.local/bin/yaltri\"\n"));
             assert!(entry.contains("X-GNOME-Autostart-enabled=true"));
+        }
+
+        #[test]
+        fn an_app_entry_under_either_name_means_installed() {
+            let data = std::env::temp_dir().join(format!("yaltri-autostart-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&data);
+            std::fs::create_dir_all(data.join("applications")).unwrap();
+            assert!(lacks_app_entry(&data));
+            std::fs::write(data.join(LEGACY_APP_ENTRY), "").unwrap();
+            assert!(!lacks_app_entry(&data));
+            std::fs::remove_file(data.join(LEGACY_APP_ENTRY)).unwrap();
+            std::fs::write(app_entry_file(&data), "").unwrap();
+            assert!(!lacks_app_entry(&data));
+            std::fs::remove_dir_all(&data).unwrap();
         }
 
         #[test]

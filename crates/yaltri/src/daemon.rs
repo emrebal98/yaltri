@@ -179,9 +179,16 @@ impl Daemon {
     fn start_platform_services(&mut self) {
         // Lets the dock, app grid and System Monitor find our icon.
         #[cfg(target_os = "linux")]
-        if let Err(e) = yaltri_platform::autostart::install_app_entry(include_str!("../../../assets/brand/app-icon.svg"))
-        {
-            tracing::warn!("installing the application entry failed: {e:#}");
+        match yaltri_platform::autostart::install_app_entry(include_str!("../../../assets/brand/app-icon.svg")) {
+            // Installed again after `yaltri uninstall` kept the settings: that
+            // removed the startup entry too, so first-run setup will not run.
+            Ok(true) if self.settings.general.start_with_system && !yaltri_platform::autostart::is_enabled() => {
+                if let Err(e) = yaltri_platform::autostart::set_enabled(true) {
+                    tracing::warn!("enabling autostart failed: {e:#}");
+                }
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("installing the application entry failed: {e:#}"),
         }
         match Tray::spawn(self.tx.clone(), self.tray_menu()) {
             Ok(t) => self.tray = Some(t),
