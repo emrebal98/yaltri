@@ -62,6 +62,7 @@
 "tool.launcher" = "Search"
 "tool.picker" = "Color picker"
 "tool.pin" = "Always on top"
+"tool.shot" = "Screenshot"
 
 # Shortcut recorder
 "shortcut.click_to_change" = "Click to change"
@@ -93,6 +94,14 @@
 "settings.launcher.description" = "Apps, files, games and a calculator in one box"
 "settings.picker.description" = "Grab the color of any pixel on screen"
 "settings.pin.description" = "Keep the focused window above all others"
+"settings.shot.description" = "Capture an area, a window or the whole screen"
+"settings.shot.folder" = "Save folder"
+"settings.shot.open" = "Open"
+"settings.shot.change" = "Change…"
+"settings.shot.choose" = "Choose the screenshots folder"
+"shot.mode.rect" = "Area"
+"shot.mode.window" = "Window"
+"shot.mode.screen" = "Screen"
 "settings.group.sources" = "Sources"
 "settings.sources.apps" = "Apps"
 "settings.sources.files" = "Files and folders"
