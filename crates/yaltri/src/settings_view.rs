@@ -72,6 +72,7 @@ pub fn tool_name(tool: ToolId) -> &'static str {
     match tool {
         ToolId::Launcher => t("tool.launcher"),
         ToolId::Picker => t("tool.picker"),
+        ToolId::Pin => t("tool.pin"),
     }
 }
 
@@ -454,7 +455,9 @@ fn setting_row(min_h: f32, first: bool, label: &str, hint: Option<&str>, p: &Pal
 impl SettingsView {
     fn shortcut_row(&self, tool: ToolId, p: &Palette, cx: &App) -> Div {
         let message = self.shortcut_message(tool, cx);
-        let wayland = cx.global::<Daemon>().session.is_wayland();
+        let session = cx.global::<Daemon>().session;
+        // On GNOME the pin shortcut is Mutter's own; there is no command to bind.
+        let wayland = session.is_wayland() && !(tool == ToolId::Pin && session == yaltri_platform::session::Session::WaylandGnome);
         div()
             .py(px(12.))
             .flex()
@@ -806,6 +809,19 @@ impl SettingsView {
         ]
     }
 
+    fn pin_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let enabled = self.row(ToolId::Pin).enabled;
+        let toggle = ui::switch("pin-enabled", enabled, p)
+            .on_click(cx.listener(move |this, _, _, cx| this.set_tool_enabled(ToolId::Pin, !enabled, cx)))
+            .into_any_element();
+        let body = card(enabled, p).child(self.shortcut_row(ToolId::Pin, p, cx)).when(!enabled, |d| d.child(blocker()));
+        vec![
+            section_header(tool_name(ToolId::Pin), Some(t("settings.pin.description")), Some(toggle), p)
+                .into_any_element(),
+            body.into_any_element(),
+        ]
+    }
+
     fn about_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let config_path = cx.global::<Daemon>().paths.settings_file();
         let config_dir = config_path.parent().map(|d| d.to_path_buf());
@@ -973,6 +989,10 @@ impl Render for SettingsView {
         if is_implemented(ToolId::Picker) {
             starts.push((ToolId::Picker, first + sections.len()));
             sections.extend(self.picker_section(p, cx));
+        }
+        if is_implemented(ToolId::Pin) {
+            starts.push((ToolId::Pin, first + sections.len()));
+            sections.extend(self.pin_section(p, cx));
         }
         sections.extend(self.about_section(p, cx));
         if let Some(tool) = self.scroll_to.take()
