@@ -22,6 +22,7 @@ pub mod ipc;
 pub mod keygrab;
 pub mod keys;
 pub mod launch;
+pub mod ocr;
 pub mod pin;
 #[cfg(target_os = "linux")]
 pub mod portal_keys;

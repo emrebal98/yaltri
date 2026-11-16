@@ -11,10 +11,12 @@ pub enum ToolId {
     Pin,
     /// Screenshot of a rectangle, window or screen.
     Shot,
+    /// Copies the text in a screen area.
+    Ocr,
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 4] = [ToolId::Launcher, ToolId::Picker, ToolId::Pin, ToolId::Shot];
+    pub const ALL: [ToolId; 5] = [ToolId::Launcher, ToolId::Picker, ToolId::Pin, ToolId::Shot, ToolId::Ocr];
 
     /// Stable machine name, used in config keys and on the command line.
     pub fn as_str(self) -> &'static str {
@@ -23,6 +25,7 @@ impl ToolId {
             ToolId::Picker => "picker",
             ToolId::Pin => "pin",
             ToolId::Shot => "shot",
+            ToolId::Ocr => "ocr",
         }
     }
 
@@ -33,6 +36,7 @@ impl ToolId {
             ToolId::Picker => "Renk Seçici",
             ToolId::Pin => "Üstte Tut",
             ToolId::Shot => "Ekran Görüntüsü",
+            ToolId::Ocr => "Metin Çıkar",
         }
     }
 }
@@ -52,6 +56,7 @@ impl FromStr for ToolId {
             "picker" | "color" | "colorpicker" => Ok(ToolId::Picker),
             "pin" | "top" | "ontop" | "alwaysontop" => Ok(ToolId::Pin),
             "shot" | "screenshot" | "capture" => Ok(ToolId::Shot),
+            "ocr" | "text" | "textextract" => Ok(ToolId::Ocr),
             other => Err(format!("unknown tool: {other}")),
         }
     }
@@ -70,6 +75,7 @@ mod tests {
         assert_eq!("top".parse::<ToolId>().unwrap(), ToolId::Pin);
         assert_eq!("OnTop".parse::<ToolId>().unwrap(), ToolId::Pin);
         assert_eq!("Screenshot".parse::<ToolId>().unwrap(), ToolId::Shot);
+        assert_eq!("text".parse::<ToolId>().unwrap(), ToolId::Ocr);
         assert!("nope".parse::<ToolId>().is_err());
     }
 }

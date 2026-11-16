@@ -9,14 +9,22 @@ use yaltri_core::settings::ShotSettings;
 use yaltri_platform::screen::Screenshot;
 
 use crate::daemon::Daemon;
+use crate::i18n::{t, tf};
+use yaltri_platform::ocr::OcrError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     Copy,
     Save,
+    /// Copy the text in it.
+    Text,
 }
 
 pub fn finish(action: Action, shot: Screenshot, cx: &mut App) {
+    if action == Action::Text {
+        copy_text(shot, cx);
+        return;
+    }
     let daemon = cx.global_mut::<Daemon>();
     match daemon.image_clipboard.set_bgra(shot.width, shot.height, &shot.bgra) {
         Ok(()) => tracing::info!(width = shot.width, height = shot.height, "screenshot copied"),
@@ -33,6 +41,33 @@ pub fn finish(action: Action, shot: Screenshot, cx: &mut App) {
             })
             .detach();
     }
+}
+
+/// Reads the text in `shot` off the UI thread, copies it and says how it
+/// went.
+fn copy_text(shot: Screenshot, cx: &mut App) {
+    let task = cx
+        .background_executor()
+        .spawn(async move { yaltri_platform::ocr::recognize(shot.width, shot.height, &shot.bgra) });
+    cx.spawn(async move |cx| {
+        let result = task.await;
+        cx.update(|cx| match result {
+            Ok(text) if text.trim().is_empty() => crate::notice::show(t("ocr.empty"), true, cx),
+            Ok(text) => {
+                let lines = text.lines().count();
+                tracing::info!(lines, "text copied");
+                cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
+                crate::notice::show(tf("ocr.copied", &[("n", &lines.to_string())]), false, cx);
+            }
+            Err(OcrError::MissingTesseract) => crate::notice::show(t("ocr.tesseract"), true, cx),
+            Err(OcrError::NoLanguage) => crate::notice::show(t("ocr.no_language"), true, cx),
+            Err(e) => {
+                tracing::warn!("reading text failed: {e}");
+                crate::notice::show(t("ocr.failed"), true, cx);
+            }
+        });
+    })
+    .detach();
 }
 
 /// The folder screenshots are saved to.

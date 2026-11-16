@@ -41,6 +41,8 @@ pub struct Daemon {
     pub shot_windows: Vec<AnyWindowHandle>,
     /// Long-lived so X11 keeps serving copied images.
     pub image_clipboard: yaltri_platform::clipboard::ImageClipboard,
+    /// The short message shown by `notice`, if one is up.
+    pub notice_window: Option<AnyWindowHandle>,
     pub colors: ColorHistory,
     pub color_editor: Option<Entity<ColorEditor>>,
     pub color_editor_window: Option<AnyWindowHandle>,
@@ -114,6 +116,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 picker_windows: Vec::new(),
                 shot_windows: Vec::new(),
                 image_clipboard: yaltri_platform::clipboard::ImageClipboard::new(),
+                notice_window: None,
                 colors,
                 color_editor: None,
                 color_editor_window: None,
@@ -243,6 +246,7 @@ impl Daemon {
                     ToolId::Launcher => "search",
                     ToolId::Picker => "pipette",
                     ToolId::Shot => "camera",
+                    ToolId::Ocr => "scan-text",
                     // Opening the menu takes focus away from the window to pin.
                     ToolId::Pin => return None,
                 };
@@ -534,7 +538,7 @@ fn first_run_setup(settings: &Settings, paths: &Paths) {
 
 /// Tools that have a UI. All of them, for now; new tools start here as false.
 pub fn is_implemented(tool: ToolId) -> bool {
-    matches!(tool, ToolId::Launcher | ToolId::Picker | ToolId::Pin | ToolId::Shot)
+    matches!(tool, ToolId::Launcher | ToolId::Picker | ToolId::Pin | ToolId::Shot | ToolId::Ocr)
 }
 
 /// Light/dark from the OS. Re-read before every command (each one opens or
@@ -560,6 +564,11 @@ fn handle(cmd: Command, cx: &mut App) {
         Command::Toggle(ToolId::Shot) => {
             if cx.global::<Daemon>().settings.shot.enabled {
                 crate::shot::toggle(cx);
+            }
+        }
+        Command::Toggle(ToolId::Ocr) => {
+            if cx.global::<Daemon>().settings.ocr.enabled {
+                crate::shot::toggle_text(cx);
             }
         }
         Command::Toggle(ToolId::Pin) => {

@@ -43,6 +43,7 @@ const FILES: &[(&str, &[u8])] = embed!(
     "icons/power.svg",
     "icons/refresh-cw.svg",
     "icons/search-x.svg",
+    "icons/scan-text.svg",
     "icons/search.svg",
     "icons/settings.svg",
     "icons/square-dashed.svg",
