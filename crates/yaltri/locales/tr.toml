@@ -61,6 +61,7 @@
 # Araçlar
 "tool.launcher" = "Arama"
 "tool.picker" = "Renk seçici"
+"tool.pin" = "Üstte tut"
 
 # Kısayol kaydedici
 "shortcut.click_to_change" = "Değiştirmek için tıklayın"
@@ -91,6 +92,7 @@
 "settings.shortcut.wayland" = "Wayland: masaüstü ayarlarında `{command}` komutunu çalıştıran özel bir kısayol ekleyin."
 "settings.launcher.description" = "Uygulama, dosya, oyun ve hesap makinesi tek kutuda"
 "settings.picker.description" = "Ekrandaki herhangi bir pikselin rengini al"
+"settings.pin.description" = "Öndeki pencereyi diğer tüm pencerelerin üstünde tut"
 "settings.group.sources" = "Kaynaklar"
 "settings.sources.apps" = "Uygulamalar"
 "settings.sources.files" = "Dosya ve klasörler"

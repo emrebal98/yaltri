@@ -13,6 +13,11 @@
 //! Windows keyboard hook wins over the shell. What we took is written to a
 //! file and given back when our shortcut changes or Yaltri quits; after a
 //! crash, the next start still knows what to give back.
+//!
+//! Some tools need no command at all: GNOME already has the action, only
+//! without a key (always on top is Mutter's `toggle-above`). Those bindings
+//! write the accelerator into that setting instead, and its earlier value
+//! is given back the same way.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -36,8 +41,21 @@ pub struct Binding {
     pub name: String,
     /// `Super+Space` form.
     pub spec: String,
-    /// Command line GNOME runs.
-    pub command: String,
+    pub action: Action,
+}
+
+/// What a shortcut does on GNOME.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Action {
+    /// A custom shortcut running this command line.
+    Command(String),
+    /// One of GNOME's own keybinding settings.
+    Builtin { schema: &'static str, key: &'static str },
+}
+
+impl Action {
+    /// Mutter's "always on top" toggle for the focused window.
+    pub const KEEP_ABOVE: Action = Action::Builtin { schema: "org.gnome.desktop.wm.keybindings", key: "toggle-above" };
 }
 
 /// Whether this desktop takes custom shortcuts the GNOME way.
@@ -64,16 +82,44 @@ pub struct Taken {
     pub accel: String,
 }
 
+/// A GNOME keybinding setting we put our accelerator into, with the value
+/// it had before.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetBuiltin {
+    pub schema: String,
+    pub key: String,
+    pub previous: Vec<String>,
+}
+
+/// What `GnomeKeys` keeps on disk.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct State {
+    #[serde(default)]
+    taken: Vec<Taken>,
+    #[serde(default)]
+    builtins: Vec<SetBuiltin>,
+}
+
+impl State {
+    /// Also reads the older file, a bare list of what we took.
+    fn parse(json: &str) -> Option<Self> {
+        serde_json::from_str(json)
+            .ok()
+            .or_else(|| serde_json::from_str::<Vec<Taken>>(json).ok().map(|taken| Self { taken, builtins: Vec::new() }))
+    }
+}
+
 /// What we took from GNOME, persisted in `file`.
 pub struct GnomeKeys {
     file: PathBuf,
     taken: Vec<Taken>,
+    builtins: Vec<SetBuiltin>,
 }
 
 impl GnomeKeys {
     pub fn load(file: PathBuf) -> Self {
-        let taken = std::fs::read_to_string(&file).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-        Self { file, taken }
+        let state = std::fs::read_to_string(&file).ok().and_then(|s| State::parse(&s)).unwrap_or_default();
+        Self { file, taken: state.taken, builtins: state.builtins }
     }
 
     /// Makes `bindings` our only GNOME custom shortcuts: frees their keys
@@ -85,8 +131,15 @@ impl GnomeKeys {
     /// and given back only after ours let go.
     pub fn apply(&mut self, bindings: &[Binding]) -> Vec<String> {
         let wanted: Vec<Combo> = bindings.iter().filter_map(|b| Combo::from_spec(&b.spec)).collect();
-        self.take(&wanted);
-        let failed = self.bind(bindings);
+        // Settings that hold our own accelerators are not GNOME's to lose.
+        let mut ours: Vec<(String, String)> = self.builtins.iter().map(|b| (b.schema.clone(), b.key.clone())).collect();
+        ours.extend(bindings.iter().filter_map(|b| match b.action {
+            Action::Builtin { schema, key } => Some((schema.to_owned(), key.to_owned())),
+            Action::Command(_) => None,
+        }));
+        self.take(&wanted, &ours);
+        let mut failed = self.bind(bindings);
+        failed.extend(self.set_builtins(bindings));
         self.give_back(&wanted);
         self.save();
         failed
@@ -119,7 +172,7 @@ impl GnomeKeys {
         }
     }
 
-    fn take(&mut self, wanted: &[Combo]) {
+    fn take(&mut self, wanted: &[Combo], skip: &[(String, String)]) {
         if !wanted.is_empty() {
             for schema in SCHEMAS {
                 let listing = match gsettings(&["list-recursively", schema]) {
@@ -130,6 +183,9 @@ impl GnomeKeys {
                     }
                 };
                 for (key, accels) in parse_listing(&listing) {
+                    if skip.iter().any(|(s, k)| s == schema && *k == key) {
+                        continue;
+                    }
                     let (clash, rest): (Vec<String>, Vec<String>) = accels
                         .into_iter()
                         .partition(|a| Combo::from_accel(a).is_some_and(|c| wanted.contains(&c)));
@@ -152,15 +208,22 @@ impl GnomeKeys {
     /// Writes `bindings` as our GNOME custom shortcuts and removes our
     /// others. Returns the ids that could not be set up.
     fn bind(&mut self, bindings: &[Binding]) -> Vec<String> {
+        let bindings: Vec<(&Binding, &str)> = bindings
+            .iter()
+            .filter_map(|b| match &b.action {
+                Action::Command(command) => Some((b, command.as_str())),
+                Action::Builtin { .. } => None,
+            })
+            .collect();
         let mut failed = Vec::new();
         let mut list = match gsettings(&["get", MEDIA_KEYS, "custom-keybindings"]).ok().and_then(|v| parse_list(v.trim())) {
             Some(list) => list,
             None => {
                 tracing::warn!("cannot read GNOME custom shortcuts");
-                return bindings.iter().map(|b| b.id.clone()).collect();
+                return bindings.iter().map(|(b, _)| b.id.clone()).collect();
             }
         };
-        let ours: Vec<String> = bindings.iter().map(|b| custom_path(&b.id)).collect();
+        let ours: Vec<String> = bindings.iter().map(|(b, _)| custom_path(&b.id)).collect();
         // Drop ours that are no longer wanted.
         let stale: Vec<String> =
             list.iter().filter(|p| is_ours(p) && !ours.contains(p)).cloned().collect();
@@ -169,14 +232,14 @@ impl GnomeKeys {
         }
         list.retain(|p| !stale.contains(p));
 
-        for (binding, path) in bindings.iter().zip(&ours) {
+        for ((binding, command), path) in bindings.iter().zip(&ours) {
             let Some(accel) = accel_from_spec(&binding.spec) else {
                 failed.push(binding.id.clone());
                 continue;
             };
             let schema = format!("{CUSTOM_SCHEMA}:{path}");
             let result = gsettings(&["set", &schema, "name", &binding.name])
-                .and_then(|_| gsettings(&["set", &schema, "command", &binding.command]))
+                .and_then(|_| gsettings(&["set", &schema, "command", command]))
                 .and_then(|_| gsettings(&["set", &schema, "binding", &accel]));
             match result {
                 Ok(_) => {
@@ -193,19 +256,70 @@ impl GnomeKeys {
         }
         if let Err(e) = gsettings(&["set", MEDIA_KEYS, "custom-keybindings", &format_list(&list)]) {
             tracing::warn!("updating GNOME custom shortcut list failed: {e:#}");
-            return bindings.iter().map(|b| b.id.clone()).collect();
+            return bindings.iter().map(|(b, _)| b.id.clone()).collect();
+        }
+        failed
+    }
+
+    /// Puts the accelerators of builtin `bindings` into their GNOME settings
+    /// and gives earlier values back to the ones no longer wanted. Returns
+    /// the ids that could not be set up.
+    fn set_builtins(&mut self, bindings: &[Binding]) -> Vec<String> {
+        let wanted: Vec<(&Binding, &str, &str)> = bindings
+            .iter()
+            .filter_map(|b| match b.action {
+                Action::Builtin { schema, key } => Some((b, schema, key)),
+                Action::Command(_) => None,
+            })
+            .collect();
+        let (keep, release): (Vec<SetBuiltin>, Vec<SetBuiltin>) = std::mem::take(&mut self.builtins)
+            .into_iter()
+            .partition(|b| wanted.iter().any(|(_, schema, key)| b.schema == *schema && b.key == *key));
+        self.builtins = keep;
+        for b in release {
+            match gsettings(&["set", &b.schema, &b.key, &format_list(&b.previous)]) {
+                Ok(_) => tracing::info!(schema = b.schema, key = b.key, "gave GNOME setting its value back"),
+                Err(e) => {
+                    tracing::warn!("restoring {} {} failed: {e:#}", b.schema, b.key);
+                    self.builtins.push(b);
+                }
+            }
+        }
+
+        let mut failed = Vec::new();
+        for (binding, schema, key) in wanted {
+            let Some(accel) = accel_from_spec(&binding.spec) else {
+                failed.push(binding.id.clone());
+                continue;
+            };
+            if !self.builtins.iter().any(|b| b.schema == schema && b.key == key) {
+                let Some(previous) = gsettings(&["get", schema, key]).ok().and_then(|v| parse_list(v.trim())) else {
+                    tracing::warn!("cannot read GNOME setting {schema} {key}");
+                    failed.push(binding.id.clone());
+                    continue;
+                };
+                self.builtins.push(SetBuiltin { schema: schema.into(), key: key.into(), previous });
+            }
+            match gsettings(&["set", schema, key, &format_list(std::slice::from_ref(&accel))]) {
+                Ok(_) => tracing::debug!(id = binding.id, schema, key, accel, "GNOME keybinding set"),
+                Err(e) => {
+                    tracing::warn!("setting {schema} {key} to {accel} failed: {e:#}");
+                    failed.push(binding.id.clone());
+                }
+            }
         }
         failed
     }
 
     fn save(&self) {
-        let result = if self.taken.is_empty() {
+        let result = if self.taken.is_empty() && self.builtins.is_empty() {
             match std::fs::remove_file(&self.file) {
                 Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
                 _ => Ok(()),
             }
         } else {
-            serde_json::to_string_pretty(&self.taken)
+            let state = State { taken: self.taken.clone(), builtins: self.builtins.clone() };
+            serde_json::to_string_pretty(&state)
                 .map_err(anyhow::Error::from)
                 .and_then(|json| Ok(std::fs::write(&self.file, json)?))
         };
@@ -448,6 +562,20 @@ mod tests {
                 ("minimize".to_owned(), vec![]),
             ]
         );
+    }
+
+    #[test]
+    fn reads_old_and_new_state_files() {
+        let taken = Taken { schema: "s".into(), key: "k".into(), accel: "<Super>space".into() };
+        let old = serde_json::to_string(&vec![taken.clone()]).unwrap();
+        assert_eq!(State::parse(&old), Some(State { taken: vec![taken.clone()], builtins: vec![] }));
+
+        let state = State {
+            taken: vec![taken],
+            builtins: vec![SetBuiltin { schema: "s".into(), key: "toggle-above".into(), previous: vec![] }],
+        };
+        assert_eq!(State::parse(&serde_json::to_string(&state).unwrap()), Some(state));
+        assert_eq!(State::parse("not json"), None);
     }
 
     #[test]

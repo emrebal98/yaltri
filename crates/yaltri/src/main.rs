@@ -33,6 +33,7 @@ komutlar:
   (yok)              arka planda başlat (zaten çalışıyorsa bir şey yapmaz)
   toggle launcher    arama penceresini aç/kapat
   toggle picker      renk seçiciyi aç/kapat
+  toggle pin         öndeki pencereyi üstte tut / bırak
   settings           ayarlar penceresini aç
   quit               çalışan yaltri'yi kapat
   update             indirilen güncellemeyi kur ve yeniden başlat (yoksa denetle)

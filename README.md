@@ -36,6 +36,10 @@ and copy it as HEX, RGB, HSL, OKLCH or five other formats.
 
 <p align="center"><img src="docs/media/color-picker.gif" width="720" alt="Picking colors: the code and name follow the cursor, the mouse wheel opens a magnifier on a tile corner, and a click opens the editor with nine formats and the history"></p>
 
+### 📌 Always on top · `Super+Shift+T`
+
+Keep the window you are working in above all others. Press the shortcut again to release it.
+
 Each tool can be switched off in **Settings**.
 
 ---
@@ -70,6 +74,7 @@ On GNOME the tray icon needs the AppIndicator extension (preinstalled on Ubuntu)
 |---|---|
 | `Super+Shift+F` | Open search |
 | `Super+Shift+C` | Open the color picker |
+| `Super+Shift+T` | Keep the focused window on top (again: release it) |
 
 Change shortcuts in the **Settings** window (right-click the tray icon → Settings).
 Yaltri starts with your system from the first launch on; turn this off under **Settings → General → Start with system**.
@@ -107,6 +112,12 @@ for example all your games.
   HEX, RGB, HSL, HSV, OKLCH, CMYK, HWB, Decimal, Float.
   The format a pick copies is set in **Settings → Color picker**.
 
+### Always on top
+
+- Works on Windows, GNOME, KDE Plasma, X11 desktops and Hyprland (where it pins the window).
+- On GNOME the shortcut becomes GNOME's own "Always on top" key, so it works for every window.
+- Windows running as administrator can't be pinned from a normal Yaltri.
+
 ### Command line
 
 ```sh
@@ -114,6 +125,7 @@ yaltri                    # start in the background
 yaltri --foreground       # stay in the terminal, with logs
 yaltri toggle launcher    # open / close search
 yaltri toggle picker      # open the color picker
+yaltri toggle pin         # keep the focused window on top / release it
 yaltri settings           # open settings
 yaltri quit               # quit
 yaltri update             # install a downloaded update (or check for one)

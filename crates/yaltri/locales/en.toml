@@ -61,6 +61,7 @@
 # Tools
 "tool.launcher" = "Search"
 "tool.picker" = "Color picker"
+"tool.pin" = "Always on top"
 
 # Shortcut recorder
 "shortcut.click_to_change" = "Click to change"
@@ -91,6 +92,7 @@
 "settings.shortcut.wayland" = "Wayland: add a custom shortcut in your desktop settings that runs `{command}`."
 "settings.launcher.description" = "Apps, files, games and a calculator in one box"
 "settings.picker.description" = "Grab the color of any pixel on screen"
+"settings.pin.description" = "Keep the focused window above all others"
 "settings.group.sources" = "Sources"
 "settings.sources.apps" = "Apps"
 "settings.sources.files" = "Files and folders"

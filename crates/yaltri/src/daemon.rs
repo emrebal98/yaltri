@@ -232,16 +232,18 @@ impl Daemon {
         items.extend(ToolId::ALL
             .into_iter()
             .filter(|t| self.settings.is_enabled(*t) && is_implemented(*t))
-            .map(|tool| {
+            .filter_map(|tool| {
                 let icon = match tool {
                     ToolId::Launcher => "search",
                     ToolId::Picker => "pipette",
+                    // Opening the menu takes focus away from the window to pin.
+                    ToolId::Pin => return None,
                 };
                 let spec = self.settings.hotkey(tool);
                 let shortcut = (!spec.is_empty()
                     && (self.session.supports_global_hotkeys() || self.uses_gnome_shortcuts() || self.uses_portal_shortcuts()))
                     .then(|| yaltri_platform::keys::display_parts(spec).join("+"));
-                entry(crate::settings_view::tool_name(tool), Command::Toggle(tool), icon, shortcut)
+                Some(entry(crate::settings_view::tool_name(tool), Command::Toggle(tool), icon, shortcut))
             }),
         );
         items.push(entry(t("tray.settings"), Command::Settings, "settings", None));
@@ -338,7 +340,11 @@ impl Daemon {
                 id: tool.to_string(),
                 name: format!("Yaltri: {}", crate::settings_view::tool_name(*tool)),
                 spec: spec.clone(),
-                command: format!("{exe} toggle {tool}"),
+                action: match tool {
+                    // Mutter keeps windows above itself, even Wayland ones.
+                    ToolId::Pin => yaltri_platform::gnome_keys::Action::KEEP_ABOVE,
+                    _ => yaltri_platform::gnome_keys::Action::Command(format!("{exe} toggle {tool}")),
+                },
             })
             .collect();
         let failed = gnome.apply(&gnome_bindings);
@@ -521,7 +527,7 @@ fn first_run_setup(settings: &Settings, paths: &Paths) {
 
 /// Tools that have a UI. All of them, for now; new tools start here as false.
 pub fn is_implemented(tool: ToolId) -> bool {
-    matches!(tool, ToolId::Launcher | ToolId::Picker)
+    matches!(tool, ToolId::Launcher | ToolId::Picker | ToolId::Pin)
 }
 
 /// Light/dark from the OS. Re-read before every command (each one opens or
@@ -542,6 +548,18 @@ fn handle(cmd: Command, cx: &mut App) {
         Command::Toggle(ToolId::Picker) => {
             if cx.global::<Daemon>().settings.picker.enabled {
                 picker::toggle(cx);
+            }
+        }
+        Command::Toggle(ToolId::Pin) => {
+            if cx.global::<Daemon>().settings.pin.enabled {
+                // Shells out on some desktops; keep it off the main thread.
+                cx.background_executor()
+                    .spawn(async {
+                        if let Err(e) = yaltri_platform::pin::toggle_focused() {
+                            tracing::warn!("always on top: {e:#}");
+                        }
+                    })
+                    .detach();
             }
         }
         Command::Settings => settings_view::open(cx),

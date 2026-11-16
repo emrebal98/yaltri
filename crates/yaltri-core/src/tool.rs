@@ -7,16 +7,19 @@ use std::str::FromStr;
 pub enum ToolId {
     Launcher,
     Picker,
+    /// Keeps the focused window above all others.
+    Pin,
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 2] = [ToolId::Launcher, ToolId::Picker];
+    pub const ALL: [ToolId; 3] = [ToolId::Launcher, ToolId::Picker, ToolId::Pin];
 
     /// Stable machine name, used in config keys and on the command line.
     pub fn as_str(self) -> &'static str {
         match self {
             ToolId::Launcher => "launcher",
             ToolId::Picker => "picker",
+            ToolId::Pin => "pin",
         }
     }
 
@@ -25,6 +28,7 @@ impl ToolId {
         match self {
             ToolId::Launcher => "Arama",
             ToolId::Picker => "Renk Seçici",
+            ToolId::Pin => "Üstte Tut",
         }
     }
 }
@@ -42,6 +46,7 @@ impl FromStr for ToolId {
         match s.trim().to_ascii_lowercase().as_str() {
             "launcher" | "search" => Ok(ToolId::Launcher),
             "picker" | "color" | "colorpicker" => Ok(ToolId::Picker),
+            "pin" | "top" | "ontop" | "alwaysontop" => Ok(ToolId::Pin),
             other => Err(format!("unknown tool: {other}")),
         }
     }
@@ -57,6 +62,8 @@ mod tests {
             assert_eq!(id.as_str().parse::<ToolId>().unwrap(), id);
         }
         assert_eq!("Search".parse::<ToolId>().unwrap(), ToolId::Launcher);
+        assert_eq!("top".parse::<ToolId>().unwrap(), ToolId::Pin);
+        assert_eq!("OnTop".parse::<ToolId>().unwrap(), ToolId::Pin);
         assert!("nope".parse::<ToolId>().is_err());
     }
 }
