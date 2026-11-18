@@ -117,8 +117,9 @@ for example all your games.
 - Each device that is on gets its own tray icon with its level, refreshed every minute. The number turns
   green while charging and red at 20% or below. Clicking an icon shows every device; earbuds show each
   bud, or "in the case".
-- Works with devices that use their own USB dongle: ATK and Pulsar mice, SteelSeries Arctis GameBuds.
-  Bluetooth devices already show their battery in the system settings.
+- Bluetooth mice, keyboards and headsets: the level Windows shows in its Bluetooth settings, or UPower's on
+  Linux (which also covers Logitech receivers). A paired device that isn't connected is left out.
+- Devices on their own USB dongle: ATK and Pulsar mice, SteelSeries Arctis GameBuds.
 - Windows 11 puts new tray icons under the ^ arrow; drag them next to the clock to keep them in view.
 - Linux needs a udev rule to read the dongles; **Settings › Battery** copies the command that adds it.
 

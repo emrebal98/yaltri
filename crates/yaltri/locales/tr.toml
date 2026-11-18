@@ -95,7 +95,7 @@
 "settings.battery.description" = "Fare ve kulaklık pili görev çubuğunda; tıklayınca kulaklıklar tek tek"
 "settings.battery.none" = "Desteklenen cihaz bulunamadı"
 "settings.battery.off" = "Açınca cihazların burada görünür"
-"settings.battery.supported" = "ATK ve Pulsar fareler, SteelSeries Arctis GameBuds (USB alıcısıyla)"
+"settings.battery.supported" = "Bluetooth fare, klavye ve kulaklıklar; USB alıcısıyla: ATK ve Pulsar fareler, SteelSeries Arctis GameBuds"
 "settings.battery.linux" = "Cihaz erişimi"
 "settings.battery.linux_hint" = "Linux'ta alıcıları okumak için udev kuralı gerekir. Komutu kopyalayıp terminalde çalıştır."
 "settings.battery.copy" = "Komutu kopyala"
