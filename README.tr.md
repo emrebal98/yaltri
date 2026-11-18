@@ -116,8 +116,9 @@ Yazarken filtrelemek için başa kısaltma ve boşluk yaz: `/u ` uygulama, `/d `
 - Açık olan her cihazın kendi tepsi simgesi olur, üstünde şarj yüzdesi yazar ve dakikada bir yenilenir.
   Şarj olurken sayı yeşil, %20 ve altında kırmızıdır. Simgeye tıklayınca tüm cihazlar görünür;
   kulaklıklarda her biri ayrı ya da "kutuda" yazar.
-- Kendi USB alıcısıyla bağlanan cihazlarla çalışır: ATK ve Pulsar fareler, SteelSeries Arctis GameBuds.
-  Bluetooth cihazlar pil durumunu zaten sistem ayarlarında gösterir.
+- Bluetooth fare, klavye ve kulaklıklar: Windows'un Bluetooth ayarlarında gösterdiği seviye, Linux'ta UPower'ınki
+  (Logitech alıcılarını da kapsar). Eşleşmiş ama bağlı olmayan cihaz gösterilmez.
+- Kendi USB alıcısıyla bağlananlar: ATK ve Pulsar fareler, SteelSeries Arctis GameBuds.
 - Windows 11 yeni tepsi simgelerini ^ okunun altına koyar; görünür kalmaları için saatin yanına sürükle.
 - Linux'ta alıcıları okumak için udev kuralı gerekir; **Ayarlar › Pil durumu** bunu ekleyen komutu kopyalar.
 

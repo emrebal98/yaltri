@@ -30,3 +30,4 @@ serde_json.workspace = true
 ttf-parser = "0.25"
 x11rb.workspace = true
 ksni.workspace = true
+zbus.workspace = true

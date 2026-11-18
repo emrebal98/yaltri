@@ -1,7 +1,8 @@
-//! Battery levels of wireless mice and earbuds that talk to the computer
-//! through their own USB dongle. Windows and Linux only know the battery of
-//! Bluetooth devices, so each supported dongle is asked in its own HID
-//! protocol.
+//! Battery levels of wireless mice, keyboards, headsets and earbuds.
+//!
+//! Bluetooth devices come from the system (`bluetooth` on Windows, UPower
+//! on Linux). Devices on their own USB dongle are invisible to it, so each
+//! supported dongle is asked in its own HID protocol:
 //!
 //! - Mice on Compx/Kysona dongles (ATK, Pulsar, Kysona; vendor `373b`,
 //!   `3554`): a 17 byte report `08 <cmd> 0… <checksum>`, where the checksum
@@ -18,6 +19,11 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use hidapi::{HidApi, HidDevice};
+
+#[cfg(windows)]
+mod bluetooth;
+#[cfg(target_os = "linux")]
+mod upower;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DeviceKind {
@@ -73,7 +79,7 @@ impl Level {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reading {
     pub kind: DeviceKind,
-    /// Product name, as the dongle reports it.
+    /// Product name, as the device or the system reports it.
     pub name: String,
     pub level: Level,
 }
@@ -105,9 +111,26 @@ const DRIVERS: &[Driver] = &[
 
 const TIMEOUT: Duration = Duration::from_millis(500);
 
-/// Every supported device that is on, one per kind (the first found).
-/// Devices that fail to answer are logged and skipped.
+/// Every supported device that is on, one per kind: dongles first, then
+/// what the system knows. Devices that fail to answer are logged and
+/// skipped.
 pub fn read_all() -> Vec<Reading> {
+    let mut readings = read_dongles();
+    #[cfg(windows)]
+    let system = bluetooth::read();
+    #[cfg(target_os = "linux")]
+    let system = upower::read();
+    #[cfg(any(windows, target_os = "linux"))]
+    for reading in system {
+        if !readings.iter().any(|r| r.kind == reading.kind) {
+            readings.push(reading);
+        }
+    }
+    readings.sort_by_key(|r| r.kind);
+    readings
+}
+
+fn read_dongles() -> Vec<Reading> {
     let api = match HidApi::new() {
         Ok(api) => api,
         Err(e) => {
@@ -137,7 +160,6 @@ pub fn read_all() -> Vec<Reading> {
             Err(e) => tracing::debug!(device = name, "reading battery failed: {e:#}"),
         }
     }
-    readings.sort_by_key(|r| r.kind);
     readings
 }
 
