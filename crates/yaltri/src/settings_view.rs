@@ -821,8 +821,10 @@ impl SettingsView {
             .into_any_element();
         let readings = cx.global::<Daemon>().battery.clone();
         let mut body = card(enabled, p);
+        // Off, nothing is read: say what turning it on shows instead.
         if readings.is_empty() {
-            body = body.child(setting_row(56., true, t("settings.battery.none"), Some(t("settings.battery.supported")), p));
+            let label = if enabled { t("settings.battery.none") } else { t("settings.battery.off") };
+            body = body.child(setting_row(56., true, label, Some(t("settings.battery.supported")), p));
         }
         for (i, r) in readings.iter().enumerate() {
             let detail = crate::battery::detail(r.level);
