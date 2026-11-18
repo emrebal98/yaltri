@@ -107,6 +107,7 @@
 "battery.right" = "Sağ {value}"
 "battery.in_case" = "kutuda"
 "battery.none" = "Desteklenen cihaz bulunamadı"
+"battery.searching" = "Cihazlar aranıyor…"
 "settings.group.sources" = "Kaynaklar"
 "settings.sources.apps" = "Uygulamalar"
 "settings.sources.files" = "Dosya ve klasörler"

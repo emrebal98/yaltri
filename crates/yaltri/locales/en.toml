@@ -107,6 +107,7 @@
 "battery.right" = "Right {value}"
 "battery.in_case" = "in the case"
 "battery.none" = "No supported device found"
+"battery.searching" = "Looking for devices…"
 "settings.group.sources" = "Sources"
 "settings.sources.apps" = "Apps"
 "settings.sources.files" = "Files and folders"

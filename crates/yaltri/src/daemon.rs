@@ -48,6 +48,9 @@ pub struct Daemon {
     battery_icons: Vec<(yaltri_platform::battery::DeviceKind, tray::BatteryIcon)>,
     /// True while `battery::refresh` reads the devices.
     pub battery_busy: bool,
+    /// The devices have been read since the tool was switched on; until
+    /// then an empty list means "still looking", not "none".
+    pub battery_checked: bool,
     /// The card listing the levels, while it is up.
     pub battery_window: Option<AnyWindowHandle>,
     /// App theme the tray menu icons were drawn for.
@@ -124,6 +127,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 battery: Vec::new(),
                 battery_icons: Vec::new(),
                 battery_busy: false,
+                battery_checked: false,
                 battery_window: None,
                 tray_apps_light: yaltri_platform::icon::apps_use_light_theme(),
                 hotkeys: None,
@@ -471,6 +475,7 @@ impl Daemon {
         self.settings = settings;
         self.settings_warning = None;
         if battery_off {
+            self.battery_checked = false;
             self.set_battery(Vec::new());
         }
         self.apply_hotkeys();

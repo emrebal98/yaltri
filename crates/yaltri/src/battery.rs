@@ -109,6 +109,7 @@ pub fn refresh(cx: &mut App) {
             let daemon = cx.global_mut::<Daemon>();
             daemon.battery_busy = false;
             if daemon.settings.battery.enabled {
+                daemon.battery_checked = true;
                 daemon.set_battery(readings);
             }
             if let Some(card) = daemon.battery_window {
@@ -189,6 +190,7 @@ impl Render for Card {
         ui::round_corners(window, R_LG);
         let readings = cx.global::<Daemon>().battery.clone();
         let empty = readings.is_empty();
+        let checked = cx.global::<Daemon>().battery_checked;
         let rows = readings.into_iter().map(|r| {
             let low = r.level.headline().is_some_and(|n| n <= LOW) && !r.level.charging();
             div()
@@ -262,7 +264,7 @@ impl Render for Card {
                             .border_color(p.border)
                             .ts(13., 18.)
                             .text_color(p.muted)
-                            .child(t("battery.none")),
+                            .child(if checked { t("battery.none") } else { t("battery.searching") }),
                     )
                 }),
         )

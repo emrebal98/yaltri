@@ -823,7 +823,11 @@ impl SettingsView {
         let mut body = card(enabled, p);
         // Off, nothing is read: say what turning it on shows instead.
         if readings.is_empty() {
-            let label = if enabled { t("settings.battery.none") } else { t("settings.battery.off") };
+            let label = match (enabled, cx.global::<Daemon>().battery_checked) {
+                (false, _) => t("settings.battery.off"),
+                (true, false) => t("battery.searching"),
+                (true, true) => t("settings.battery.none"),
+            };
             body = body.child(setting_row(56., true, label, Some(t("settings.battery.supported")), p));
         }
         for (i, r) in readings.iter().enumerate() {
