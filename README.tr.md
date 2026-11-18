@@ -118,6 +118,8 @@ Yazarken filtrelemek için başa kısaltma ve boşluk yaz: `/u ` uygulama, `/d `
   kulaklıklarda her biri ayrı ya da "kutuda" yazar.
 - Bluetooth fare, klavye ve kulaklıklar: Windows'un Bluetooth ayarlarında gösterdiği seviye, Linux'ta UPower'ınki
   (Logitech alıcılarını da kapsar). Eşleşmiş ama bağlı olmayan cihaz gösterilmez.
+- Unifying, Lightspeed ya da Bolt alıcılı veya doğrudan bağlı Logitech fare, klavye ve kulaklıklar
+  (HID++; Linux'ta UPower üzerinden).
 - Kendi USB alıcısıyla bağlananlar: ATK ve Pulsar fareler, SteelSeries Arctis GameBuds.
 - Windows 11 yeni tepsi simgelerini ^ okunun altına koyar; görünür kalmaları için saatin yanına sürükle.
 - Linux'ta alıcıları okumak için udev kuralı gerekir; **Ayarlar › Pil durumu** bunu ekleyen komutu kopyalar.

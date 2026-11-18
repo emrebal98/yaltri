@@ -119,6 +119,8 @@ for example all your games.
   bud, or "in the case".
 - Bluetooth mice, keyboards and headsets: the level Windows shows in its Bluetooth settings, or UPower's on
   Linux (which also covers Logitech receivers). A paired device that isn't connected is left out.
+- Logitech mice, keyboards and headsets on a Unifying, Lightspeed or Bolt receiver, or plugged in directly
+  (HID++; on Linux through UPower).
 - Devices on their own USB dongle: ATK and Pulsar mice, SteelSeries Arctis GameBuds.
 - Windows 11 puts new tray icons under the ^ arrow; drag them next to the clock to keep them in view.
 - Linux needs a udev rule to read the dongles; **Settings › Battery** copies the command that adds it.
