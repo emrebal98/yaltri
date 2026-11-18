@@ -36,6 +36,11 @@ HEX, RGB, HSL, OKLCH ya da beş başka formatta kopyala.
 
 <p align="center"><img src="docs/media/color-picker.gif" width="720" alt="Renk seçme: kod ve ad imleci izler, fare tekerleği bir köşede büyüteci açar, tıklayınca editör dokuz formatı ve geçmişi gösterir"></p>
 
+### 🔋 Pil durumu
+
+Kablosuz fare ve kulaklığının şarjı saatin yanında. Tıklayınca kulaklıklar tek tek görünür.
+**Ayarlar**'dan açana kadar kapalıdır.
+
 Her araç **Ayarlar**'dan kapatılabilir.
 
 ---
@@ -106,6 +111,16 @@ Yazarken filtrelemek için başa kısaltma ve boşluk yaz: `/u ` uygulama, `/d `
   HEX, RGB, HSL, HSV, OKLCH, CMYK, HWB, Decimal, Float.
   Seçimde kopyalanacak format **Ayarlar → Renk seçici**'den belirlenir.
 
+### Pil durumu
+
+- Açık olan her cihazın kendi tepsi simgesi olur, üstünde şarj yüzdesi yazar ve dakikada bir yenilenir.
+  Şarj olurken sayı yeşil, %20 ve altında kırmızıdır. Simgeye tıklayınca tüm cihazlar görünür;
+  kulaklıklarda her biri ayrı ya da "kutuda" yazar.
+- Kendi USB alıcısıyla bağlanan cihazlarla çalışır: ATK ve Pulsar fareler, SteelSeries Arctis GameBuds.
+  Bluetooth cihazlar pil durumunu zaten sistem ayarlarında gösterir.
+- Windows 11 yeni tepsi simgelerini ^ okunun altına koyar; görünür kalmaları için saatin yanına sürükle.
+- Linux'ta alıcıları okumak için udev kuralı gerekir; **Ayarlar › Pil durumu** bunu ekleyen komutu kopyalar.
+
 ### Komut satırı
 
 ```sh
@@ -113,6 +128,7 @@ yaltri                    # arka planda başlat
 yaltri --foreground       # terminalde kal, loglar burada
 yaltri toggle launcher    # arama kutusunu aç / kapat
 yaltri toggle picker      # renk seçiciyi aç
+yaltri toggle battery     # pil durumunu göster
 yaltri settings           # ayarları aç
 yaltri quit               # kapat
 yaltri update             # inen güncellemeyi kur (yoksa denetle)

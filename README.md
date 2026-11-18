@@ -36,6 +36,11 @@ and copy it as HEX, RGB, HSL, OKLCH or five other formats.
 
 <p align="center"><img src="docs/media/color-picker.gif" width="720" alt="Picking colors: the code and name follow the cursor, the mouse wheel opens a magnifier on a tile corner, and a click opens the editor with nine formats and the history"></p>
 
+### 🔋 Battery
+
+Your wireless mouse and earbuds' charge next to the clock. Click it to see each earbud.
+Off until you switch it on in **Settings**.
+
 Each tool can be switched off in **Settings**.
 
 ---
@@ -107,6 +112,16 @@ for example all your games.
   HEX, RGB, HSL, HSV, OKLCH, CMYK, HWB, Decimal, Float.
   The format a pick copies is set in **Settings → Color picker**.
 
+### Battery
+
+- Each device that is on gets its own tray icon with its level, refreshed every minute. The number turns
+  green while charging and red at 20% or below. Clicking an icon shows every device; earbuds show each
+  bud, or "in the case".
+- Works with devices that use their own USB dongle: ATK and Pulsar mice, SteelSeries Arctis GameBuds.
+  Bluetooth devices already show their battery in the system settings.
+- Windows 11 puts new tray icons under the ^ arrow; drag them next to the clock to keep them in view.
+- Linux needs a udev rule to read the dongles; **Settings › Battery** copies the command that adds it.
+
 ### Command line
 
 ```sh
@@ -114,6 +129,7 @@ yaltri                    # start in the background
 yaltri --foreground       # stay in the terminal, with logs
 yaltri toggle launcher    # open / close search
 yaltri toggle picker      # open the color picker
+yaltri toggle battery     # show the battery levels
 yaltri settings           # open settings
 yaltri quit               # quit
 yaltri update             # install a downloaded update (or check for one)

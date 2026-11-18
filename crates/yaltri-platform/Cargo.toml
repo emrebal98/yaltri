@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 futures.workspace = true
+hidapi.workspace = true
 interprocess.workspace = true
 open.workspace = true
 resvg.workspace = true

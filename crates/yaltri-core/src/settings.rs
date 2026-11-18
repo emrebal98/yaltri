@@ -19,6 +19,7 @@ pub struct Settings {
     pub files: FilesSettings,
     pub games: GamesSettings,
     pub picker: PickerSettings,
+    pub battery: BatterySettings,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -96,6 +97,14 @@ pub struct PickerSettings {
     pub open_editor: bool,
 }
 
+/// Battery of wireless mice and earbuds as tray icons. Off by default: it
+/// adds icons to the tray.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BatterySettings {
+    pub enabled: bool,
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -105,6 +114,7 @@ impl Default for Settings {
             files: FilesSettings::default(),
             games: GamesSettings::default(),
             picker: PickerSettings::default(),
+            battery: BatterySettings::default(),
         }
     }
 }
@@ -208,6 +218,7 @@ impl Settings {
         match tool {
             ToolId::Launcher => self.launcher.enabled,
             ToolId::Picker => self.picker.enabled,
+            ToolId::Battery => self.battery.enabled,
         }
     }
 
@@ -215,6 +226,7 @@ impl Settings {
         match tool {
             ToolId::Launcher => self.launcher.enabled = enabled,
             ToolId::Picker => self.picker.enabled = enabled,
+            ToolId::Battery => self.battery.enabled = enabled,
         }
     }
 
@@ -222,6 +234,7 @@ impl Settings {
         match tool {
             ToolId::Launcher => &self.launcher.hotkey,
             ToolId::Picker => &self.picker.hotkey,
+            ToolId::Battery => "",
         }
     }
 
@@ -229,6 +242,7 @@ impl Settings {
         match tool {
             ToolId::Launcher => self.launcher.hotkey = hotkey,
             ToolId::Picker => self.picker.hotkey = hotkey,
+            ToolId::Battery => {}
         }
     }
 
@@ -337,6 +351,16 @@ mod tests {
         assert!(s.hotkey_conflicts().is_empty(), "disabled tools never conflict");
         s.picker.enabled = true;
         assert_eq!(s.hotkey_conflicts(), vec![(ToolId::Launcher, ToolId::Picker)]);
+    }
+
+    #[test]
+    fn battery_is_off_and_has_no_shortcut() {
+        let mut s = Settings::default();
+        assert!(!s.is_enabled(ToolId::Battery));
+        s.set_hotkey(ToolId::Battery, "Ctrl+B".into());
+        assert_eq!(s.hotkey(ToolId::Battery), "");
+        s.set_enabled(ToolId::Battery, true);
+        assert!(s.hotkey_conflicts().is_empty());
     }
 
     #[test]

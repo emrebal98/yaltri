@@ -13,6 +13,7 @@ use anyhow::Result;
 use yaltri_core::{Command, ToolId};
 
 use crate::CommandSender;
+use crate::battery::DeviceKind;
 
 /// One entry in the tray menu; the caller supplies localized labels.
 #[derive(Clone, Debug)]
@@ -25,7 +26,17 @@ pub struct MenuEntry {
     pub shortcut: Option<String>,
 }
 
-pub use imp::Tray;
+/// What a battery tray icon shows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BatteryBadge {
+    pub gauge: crate::battery_icon::Gauge,
+    pub tooltip: String,
+}
+
+/// Prefix of battery icon ids; a click on one sends `toggle battery`.
+const BATTERY_ID: &str = "yaltri-battery-";
+
+pub use imp::{BatteryIcon, Tray};
 
 #[cfg(windows)]
 mod imp {
@@ -62,15 +73,17 @@ mod imp {
                 }
             }));
             TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
-                if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } =
+                if let TrayIconEvent::Click { id, button: MouseButton::Left, button_state: MouseButtonState::Up, .. } =
                     event
                 {
-                    let _ = tx.unbounded_send(Command::Toggle(ToolId::Launcher));
+                    let tool = if id.0.starts_with(BATTERY_ID) { ToolId::Battery } else { ToolId::Launcher };
+                    let _ = tx.unbounded_send(Command::Toggle(tool));
                 }
             }));
 
             let light_taskbar = crate::icon::taskbar_is_light();
             let icon = TrayIconBuilder::new()
+                .with_id("yaltri")
                 .with_tooltip("Yaltri")
                 .with_icon(tray_icon(light_taskbar)?)
                 .with_menu(Box::new(build_menu(&menu)?))
@@ -90,6 +103,72 @@ mod imp {
             let light = crate::icon::taskbar_is_light();
             if light != self.light_taskbar {
                 self.icon.set_icon(Some(tray_icon(light)?))?;
+                self.light_taskbar = light;
+            }
+            Ok(())
+        }
+    }
+
+    /// One device's battery in the tray. Left clicks reach the handler `Tray`
+    /// installs, so the main tray must exist first.
+    ///
+    /// Windows keys the user's "show on the taskbar" choice on the exe path
+    /// and the icon's number, which counts up per icon the process creates.
+    /// So create these once, in a fixed order right after the main tray, and
+    /// hide them instead of dropping them. (A fixed GUID would be the clean
+    /// fix, but for an unsigned exe Windows ties it to the first exe path
+    /// that used it and silently refuses it from any other.)
+    pub struct BatteryIcon {
+        icon: TrayIcon,
+        badge: BatteryBadge,
+        light_taskbar: bool,
+        visible: bool,
+    }
+
+    fn battery_icon(badge: &BatteryBadge, light_taskbar: bool) -> Result<Icon> {
+        let size = tray_icon_size();
+        let rgba = crate::battery_icon::rgba(&badge.gauge, size, light_taskbar);
+        Icon::from_rgba(rgba, size, size).context("building battery icon")
+    }
+
+    impl BatteryIcon {
+        /// Starts hidden.
+        pub fn spawn(_tx: CommandSender, kind: DeviceKind, badge: BatteryBadge) -> Result<Self> {
+            let light_taskbar = crate::icon::taskbar_is_light();
+            let icon = TrayIconBuilder::new()
+                .with_id(format!("{BATTERY_ID}{}", kind.as_str()))
+                .with_tooltip(&badge.tooltip)
+                .with_icon(battery_icon(&badge, light_taskbar)?)
+                .build()
+                .context("creating battery tray icon")?;
+            icon.set_visible(false)?;
+            Ok(Self { icon, badge, light_taskbar, visible: false })
+        }
+
+        pub fn set(&mut self, badge: BatteryBadge) -> Result<()> {
+            if badge == self.badge {
+                return Ok(());
+            }
+            if badge.tooltip != self.badge.tooltip {
+                self.icon.set_tooltip(Some(&badge.tooltip))?;
+            }
+            self.icon.set_icon(Some(battery_icon(&badge, self.light_taskbar)?))?;
+            self.badge = badge;
+            Ok(())
+        }
+
+        pub fn set_visible(&mut self, visible: bool) -> Result<()> {
+            if visible != self.visible {
+                self.icon.set_visible(visible)?;
+                self.visible = visible;
+            }
+            Ok(())
+        }
+
+        pub fn refresh_theme(&mut self) -> Result<()> {
+            let light = crate::icon::taskbar_is_light();
+            if light != self.light_taskbar {
+                self.icon.set_icon(Some(battery_icon(&self.badge, light)?))?;
                 self.light_taskbar = light;
             }
             Ok(())
@@ -246,6 +325,81 @@ mod imp {
                     }
                 })
                 .collect()
+        }
+    }
+
+    /// One device's battery as its own StatusNotifierItem.
+    pub struct BatteryIcon {
+        handle: Handle<BatterySni>,
+        badge: BatteryBadge,
+        visible: bool,
+    }
+
+    struct BatterySni {
+        tx: CommandSender,
+        id: String,
+        badge: BatteryBadge,
+        visible: bool,
+    }
+
+    impl ksni::Tray for BatterySni {
+        fn id(&self) -> String {
+            self.id.clone()
+        }
+        fn title(&self) -> String {
+            self.badge.tooltip.clone()
+        }
+        fn status(&self) -> ksni::Status {
+            // Panels hide passive items.
+            if self.visible { ksni::Status::Active } else { ksni::Status::Passive }
+        }
+        fn tool_tip(&self) -> ksni::ToolTip {
+            ksni::ToolTip { title: self.badge.tooltip.clone(), ..Default::default() }
+        }
+        fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+            // Panels are assumed dark.
+            [16u32, 24, 32]
+                .into_iter()
+                .map(|size| ksni::Icon {
+                    width: size as i32,
+                    height: size as i32,
+                    data: crate::icon::argb(crate::battery_icon::rgba(&self.badge.gauge, size, false)),
+                })
+                .collect()
+        }
+        fn activate(&mut self, _x: i32, _y: i32) {
+            let _ = self.tx.unbounded_send(Command::Toggle(ToolId::Battery));
+        }
+    }
+
+    impl BatteryIcon {
+        /// Starts hidden.
+        pub fn spawn(tx: CommandSender, kind: DeviceKind, badge: BatteryBadge) -> Result<Self> {
+            let id = format!("{BATTERY_ID}{}", kind.as_str());
+            let handle = BatterySni { tx, id, badge: badge.clone(), visible: false }
+                .spawn()
+                .context("starting battery tray icon")?;
+            Ok(Self { handle, badge, visible: false })
+        }
+
+        pub fn set_visible(&mut self, visible: bool) -> Result<()> {
+            if visible != self.visible {
+                self.visible = visible;
+                self.handle.update(|t| t.visible = visible);
+            }
+            Ok(())
+        }
+
+        pub fn set(&mut self, badge: BatteryBadge) -> Result<()> {
+            if badge != self.badge {
+                self.badge = badge.clone();
+                self.handle.update(|t| t.badge = badge);
+            }
+            Ok(())
+        }
+
+        pub fn refresh_theme(&mut self) -> Result<()> {
+            Ok(())
         }
     }
 
