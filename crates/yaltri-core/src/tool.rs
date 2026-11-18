@@ -7,16 +7,20 @@ use std::str::FromStr;
 pub enum ToolId {
     Launcher,
     Picker,
+    /// Battery of wireless mice and earbuds in the tray. Has no shortcut;
+    /// toggling shows the levels.
+    Battery,
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 2] = [ToolId::Launcher, ToolId::Picker];
+    pub const ALL: [ToolId; 3] = [ToolId::Launcher, ToolId::Picker, ToolId::Battery];
 
     /// Stable machine name, used in config keys and on the command line.
     pub fn as_str(self) -> &'static str {
         match self {
             ToolId::Launcher => "launcher",
             ToolId::Picker => "picker",
+            ToolId::Battery => "battery",
         }
     }
 
@@ -25,6 +29,7 @@ impl ToolId {
         match self {
             ToolId::Launcher => "Arama",
             ToolId::Picker => "Renk Seçici",
+            ToolId::Battery => "Pil Durumu",
         }
     }
 }
@@ -42,6 +47,7 @@ impl FromStr for ToolId {
         match s.trim().to_ascii_lowercase().as_str() {
             "launcher" | "search" => Ok(ToolId::Launcher),
             "picker" | "color" | "colorpicker" => Ok(ToolId::Picker),
+            "battery" | "batteries" => Ok(ToolId::Battery),
             other => Err(format!("unknown tool: {other}")),
         }
     }

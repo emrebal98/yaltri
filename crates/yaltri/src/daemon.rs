@@ -42,6 +42,14 @@ pub struct Daemon {
     pub color_editor_window: Option<AnyWindowHandle>,
     pub tx: CommandSender,
     tray: Option<Tray>,
+    /// Last battery levels read, one per device that is on.
+    pub battery: Vec<yaltri_platform::battery::Reading>,
+    /// A tray icon per device in `battery`.
+    battery_icons: Vec<(yaltri_platform::battery::DeviceKind, tray::BatteryIcon)>,
+    /// True while `battery::refresh` reads the devices.
+    pub battery_busy: bool,
+    /// The card listing the levels, while it is up.
+    pub battery_window: Option<AnyWindowHandle>,
     /// App theme the tray menu icons were drawn for.
     tray_apps_light: bool,
     hotkeys: Option<Hotkeys>,
@@ -113,6 +121,10 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 color_editor_window: None,
                 tx: tx.clone(),
                 tray: None,
+                battery: Vec::new(),
+                battery_icons: Vec::new(),
+                battery_busy: false,
+                battery_window: None,
                 tray_apps_light: yaltri_platform::icon::apps_use_light_theme(),
                 hotkeys: None,
                 hotkeys_suspended: false,
@@ -146,6 +158,14 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 loop {
                     cx.background_executor().timer(THEME_POLL).await;
                     cx.update(|cx| cx.global_mut::<Daemon>().refresh_tray_theme());
+                }
+            })
+            .detach();
+
+            cx.spawn(async move |cx| {
+                loop {
+                    cx.update(crate::battery::refresh);
+                    cx.background_executor().timer(crate::battery::POLL).await;
                 }
             })
             .detach();
@@ -236,6 +256,8 @@ impl Daemon {
                 let icon = match tool {
                     ToolId::Launcher => "search",
                     ToolId::Picker => "pipette",
+                    // Has its own tray icons.
+                    ToolId::Battery => return None,
                 };
                 let spec = self.settings.hotkey(tool);
                 let shortcut = (!spec.is_empty()
@@ -255,6 +277,11 @@ impl Daemon {
         let apps_light = yaltri_platform::icon::apps_use_light_theme();
         let menu = (apps_light != self.tray_apps_light).then(|| self.tray_menu());
         self.tray_apps_light = apps_light;
+        for (_, icon) in &mut self.battery_icons {
+            if let Err(e) = icon.refresh_theme() {
+                tracing::warn!("updating battery icon failed: {e:#}");
+            }
+        }
         if let Some(tray) = self.tray.as_mut() {
             if let Err(e) = tray.refresh_theme() {
                 tracing::warn!("updating tray icon failed: {e:#}");
@@ -265,6 +292,32 @@ impl Daemon {
                 tracing::warn!("updating tray menu failed: {e:#}");
             }
         }
+    }
+
+    /// Shows `readings` in the tray: each device's icon updated and shown,
+    /// the others hidden. The icons are made once, all of them in a fixed
+    /// order, and never dropped (see `tray::BatteryIcon`). Main thread only
+    /// (Windows tray).
+    pub fn set_battery(&mut self, readings: Vec<yaltri_platform::battery::Reading>) {
+        use yaltri_platform::battery::DeviceKind;
+        if self.battery_icons.is_empty() && !readings.is_empty() {
+            for kind in DeviceKind::ALL {
+                match tray::BatteryIcon::spawn(self.tx.clone(), kind, crate::battery::placeholder(kind)) {
+                    Ok(icon) => self.battery_icons.push((kind, icon)),
+                    Err(e) => tracing::warn!("adding battery icon failed: {e:#}"),
+                }
+            }
+        }
+        for (kind, icon) in &mut self.battery_icons {
+            let result = match readings.iter().find(|r| r.kind == *kind) {
+                Some(r) => icon.set(crate::battery::badge(r)).and_then(|()| icon.set_visible(true)),
+                None => icon.set_visible(false),
+            };
+            if let Err(e) = result {
+                tracing::warn!("updating battery icon failed: {e:#}");
+            }
+        }
+        self.battery = readings;
     }
 
     /// Releases every global hotkey (while a shortcut is being recorded, so
@@ -414,8 +467,12 @@ impl Daemon {
         if settings.general.theme != self.settings.general.theme {
             crate::theme::set_choice(crate::theme::ThemeChoice::from_key(&settings.general.theme));
         }
+        let battery_off = !settings.battery.enabled;
         self.settings = settings;
         self.settings_warning = None;
+        if battery_off {
+            self.set_battery(Vec::new());
+        }
         self.apply_hotkeys();
         self.rebuild_search();
         let menu = self.tray_menu();
@@ -521,7 +578,7 @@ fn first_run_setup(settings: &Settings, paths: &Paths) {
 
 /// Tools that have a UI. All of them, for now; new tools start here as false.
 pub fn is_implemented(tool: ToolId) -> bool {
-    matches!(tool, ToolId::Launcher | ToolId::Picker)
+    matches!(tool, ToolId::Launcher | ToolId::Picker | ToolId::Battery)
 }
 
 /// Light/dark from the OS. Re-read before every command (each one opens or
@@ -542,6 +599,11 @@ fn handle(cmd: Command, cx: &mut App) {
         Command::Toggle(ToolId::Picker) => {
             if cx.global::<Daemon>().settings.picker.enabled {
                 picker::toggle(cx);
+            }
+        }
+        Command::Toggle(ToolId::Battery) => {
+            if cx.global::<Daemon>().settings.battery.enabled {
+                crate::battery::toggle(cx);
             }
         }
         Command::Settings => settings_view::open(cx),

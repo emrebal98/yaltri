@@ -53,6 +53,71 @@ pub fn tray_rgba(size: u32, light_taskbar: bool) -> Vec<u8> {
     svg_rgba(svg, size, None).unwrap_or_else(|| vec![0; (size * size * 4) as usize])
 }
 
+/// How a battery number is colored in the tray.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tone {
+    Normal,
+    Low,
+    Charging,
+}
+
+/// Digits in a 4×7 pixel font, one string per row (`#` is ink).
+fn glyph_rows(c: char) -> Option<[&'static str; 7]> {
+    Some(match c {
+        '0' => [" ## ", "#  #", "#  #", "#  #", "#  #", "#  #", " ## "],
+        '1' => ["  # ", " ## ", "  # ", "  # ", "  # ", "  # ", " ###"],
+        '2' => [" ## ", "#  #", "   #", "  # ", " #  ", "#   ", "####"],
+        '3' => [" ## ", "#  #", "   #", " ## ", "   #", "#  #", " ## "],
+        '4' => ["#  #", "#  #", "#  #", "####", "   #", "   #", "   #"],
+        '5' => ["####", "#   ", "### ", "   #", "   #", "#  #", " ## "],
+        '6' => [" ## ", "#   ", "#   ", "### ", "#  #", "#  #", " ## "],
+        '7' => ["####", "   #", "  # ", "  # ", " #  ", " #  ", " #  "],
+        '8' => [" ## ", "#  #", "#  #", " ## ", "#  #", "#  #", " ## "],
+        '9' => [" ## ", "#  #", "#  #", " ###", "   #", "   #", " ## "],
+        '-' => ["    ", "    ", "    ", "####", "    ", "    ", "    "],
+        _ => return None,
+    })
+}
+
+/// A tray icon for a battery: the Lucide `device` glyph on top, `text`
+/// (digits or `-`) below in a pixel font, laid out on a 16 px grid and drawn
+/// at `size` px.
+pub fn battery_rgba(device: &str, text: &str, tone: Tone, size: u32, light_taskbar: bool) -> Vec<u8> {
+    let ink = if light_taskbar { "#1A1A1A" } else { "#FFFFFF" };
+    let digits = match tone {
+        Tone::Normal => ink,
+        Tone::Low => "#E5484D",
+        Tone::Charging => if light_taskbar { "#18794E" } else { "#3DD68C" },
+    };
+    // The glyph as a nested 8 px square at the top; a thicker stroke so it
+    // survives the downscale.
+    let glyph = device
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("<!--"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .replacen(r#"width="24""#, r#"x="4" y="0" width="8""#, 1)
+        .replacen(r#"height="24""#, r#"height="8""#, 1)
+        .replacen(r#"stroke-width="2""#, r#"stroke-width="2.75""#, 1);
+    let chars: Vec<[&str; 7]> = text.chars().filter_map(glyph_rows).collect();
+    let width = (chars.len() * 5).saturating_sub(1);
+    let left = 16usize.saturating_sub(width) / 2;
+    let mut cells = String::new();
+    for (i, rows) in chars.iter().enumerate() {
+        for (y, row) in rows.iter().enumerate() {
+            for (x, c) in row.chars().enumerate() {
+                if c == '#' {
+                    cells.push_str(&format!(r#"<rect x="{}" y="{}" width="1" height="1"/>"#, left + i * 5 + x, 9 + y));
+                }
+            }
+        }
+    }
+    let svg = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">{glyph}<g fill="{digits}" shape-rendering="crispEdges">{cells}</g></svg>"#
+    );
+    svg_rgba(&svg, size, Some(ink)).unwrap_or_else(|| vec![0; (size * size * 4) as usize])
+}
+
 /// Whether the taskbar uses the light theme (Windows "system" mode, which
 /// can differ from the apps mode). Linux panels are assumed dark.
 pub fn taskbar_is_light() -> bool {
@@ -124,6 +189,22 @@ mod tests {
             let expected = if light { 0x1A } else { 0xFF };
             assert!(rgba.chunks_exact(4).filter(|p| p[3] == 255).all(|p| p[0] == expected));
         }
+    }
+
+    #[test]
+    fn battery_icon_draws_the_device_and_crisp_digits() {
+        let mouse = include_str!("../../../assets/icons/mouse.svg");
+        let rgba = battery_rgba(mouse, "35", Tone::Low, 16, false);
+        let px = |x: usize, y: usize| &rgba[(y * 16 + x) * 4..][..4];
+        assert!((0..8).flat_map(|y| (0..16).map(move |x| (x, y))).any(|(x, y)| px(x, y)[3] > 128), "glyph on top");
+        // "35" is 9 px wide, starting at x = 3; the top row of "3" is " ## ".
+        assert_eq!(px(4, 9), &[0xE5, 0x48, 0x4D, 255]);
+        assert_eq!(px(3, 9)[3], 0);
+        // Three digits still fit.
+        let full = battery_rgba(mouse, "100", Tone::Normal, 16, true);
+        // "100" is 14 px wide from x = 1; the 1's top is at x = 1 + 2.
+        assert_eq!(&full[(9 * 16 + 3) * 4..][..4], &[0x1A, 0x1A, 0x1A, 255], "the 1's top");
+        assert_eq!(battery_rgba(mouse, "-", Tone::Normal, 24, false).len(), 24 * 24 * 4);
     }
 
     #[test]

@@ -67,11 +67,16 @@ pub fn open_at(tool: Option<ToolId>, cx: &mut App) {
     }
 }
 
+/// Linux: lets the logged-in user open the battery tool's dongles
+/// (`/dev/hidraw*`), vendor ids as in `yaltri_platform::battery`.
+const UDEV_COMMAND: &str = r#"echo 'KERNEL=="hidraw*", ATTRS{idVendor}=="373b|3554|1038", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/70-yaltri-battery.rules && sudo udevadm control --reload && sudo udevadm trigger"#;
+
 /// Localized tool name.
 pub fn tool_name(tool: ToolId) -> &'static str {
     match tool {
         ToolId::Launcher => t("tool.launcher"),
         ToolId::Picker => t("tool.picker"),
+        ToolId::Battery => t("tool.battery"),
     }
 }
 
@@ -281,6 +286,9 @@ impl SettingsView {
     fn set_tool_enabled(&mut self, tool: ToolId, on: bool, cx: &mut Context<Self>) {
         self.row_mut(tool).enabled = on;
         self.save(cx);
+        if tool == ToolId::Battery && on {
+            crate::battery::refresh(cx);
+        }
     }
 
     /// Turns the daily update check on or off; on also checks right away.
@@ -806,6 +814,53 @@ impl SettingsView {
         ]
     }
 
+    fn battery_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let enabled = self.row(ToolId::Battery).enabled;
+        let toggle = ui::switch("battery-enabled", enabled, p)
+            .on_click(cx.listener(move |this, _, _, cx| this.set_tool_enabled(ToolId::Battery, !enabled, cx)))
+            .into_any_element();
+        let readings = cx.global::<Daemon>().battery.clone();
+        let mut body = card(enabled, p);
+        if readings.is_empty() {
+            body = body.child(setting_row(56., true, t("settings.battery.none"), Some(t("settings.battery.supported")), p));
+        }
+        for (i, r) in readings.iter().enumerate() {
+            let detail = crate::battery::detail(r.level);
+            body = body.child(
+                setting_row(56., i == 0, &r.name, detail.as_deref(), p)
+                    .child(ui::icon(crate::battery::device_icon(r.kind), 16., p.muted))
+                    .when_some(r.level.headline(), |d, n| {
+                        d.child(
+                            div()
+                                .ts(14., 20.)
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(p.foreground)
+                                .child(crate::battery::percent(n)),
+                        )
+                    }),
+            );
+        }
+        if cfg!(target_os = "linux") {
+            body = body.child(
+                setting_row(56., false, t("settings.battery.linux"), Some(t("settings.battery.linux_hint")), p).child(
+                    ui::button("battery-udev-copy", ButtonKind::Secondary, p)
+                        .child(ui::icon("copy", 14., p.foreground))
+                        .child(t("settings.battery.copy"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(UDEV_COMMAND.into()));
+                            this.flash(false, t("settings.battery.copied").into(), cx);
+                        })),
+                ),
+            );
+        }
+        let body = body.when(!enabled, |d| d.child(blocker()));
+        vec![
+            section_header(tool_name(ToolId::Battery), Some(t("settings.battery.description")), Some(toggle), p)
+                .into_any_element(),
+            body.into_any_element(),
+        ]
+    }
+
     fn about_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let config_path = cx.global::<Daemon>().paths.settings_file();
         let config_dir = config_path.parent().map(|d| d.to_path_buf());
@@ -973,6 +1028,10 @@ impl Render for SettingsView {
         if is_implemented(ToolId::Picker) {
             starts.push((ToolId::Picker, first + sections.len()));
             sections.extend(self.picker_section(p, cx));
+        }
+        if is_implemented(ToolId::Battery) {
+            starts.push((ToolId::Battery, first + sections.len()));
+            sections.extend(self.battery_section(p, cx));
         }
         sections.extend(self.about_section(p, cx));
         if let Some(tool) = self.scroll_to.take()

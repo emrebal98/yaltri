@@ -61,6 +61,7 @@
 # Araçlar
 "tool.launcher" = "Arama"
 "tool.picker" = "Renk seçici"
+"tool.battery" = "Pil durumu"
 
 # Kısayol kaydedici
 "shortcut.click_to_change" = "Değiştirmek için tıklayın"
@@ -91,6 +92,20 @@
 "settings.shortcut.wayland" = "Wayland: masaüstü ayarlarında `{command}` komutunu çalıştıran özel bir kısayol ekleyin."
 "settings.launcher.description" = "Uygulama, dosya, oyun ve hesap makinesi tek kutuda"
 "settings.picker.description" = "Ekrandaki herhangi bir pikselin rengini al"
+"settings.battery.description" = "Fare ve kulaklık pili görev çubuğunda; tıklayınca kulaklıklar tek tek"
+"settings.battery.none" = "Açık desteklenen cihaz yok"
+"settings.battery.supported" = "ATK ve Pulsar fareler, SteelSeries Arctis GameBuds (USB alıcısıyla)"
+"settings.battery.linux" = "Cihaz erişimi"
+"settings.battery.linux_hint" = "Linux'ta alıcıları okumak için udev kuralı gerekir. Komutu kopyalayıp terminalde çalıştır."
+"settings.battery.copy" = "Komutu kopyala"
+"settings.battery.copied" = "Komut kopyalandı"
+"battery.title" = "Pil durumu"
+"battery.percent" = "%{n}"
+"battery.charging" = "Şarj oluyor"
+"battery.left" = "Sol {value}"
+"battery.right" = "Sağ {value}"
+"battery.in_case" = "kutuda"
+"battery.none" = "Açık desteklenen cihaz yok"
 "settings.group.sources" = "Kaynaklar"
 "settings.sources.apps" = "Uygulamalar"
 "settings.sources.files" = "Dosya ve klasörler"

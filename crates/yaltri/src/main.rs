@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod assets;
+mod battery;
 mod color_editor;
 mod daemon;
 mod i18n;

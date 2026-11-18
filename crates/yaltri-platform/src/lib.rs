@@ -7,6 +7,7 @@ pub mod hookkeys;
 #[cfg(windows)]
 pub mod powertoys;
 pub mod autostart;
+pub mod battery;
 #[cfg(any(windows, target_os = "linux"))]
 pub mod desktop_font;
 #[cfg(target_os = "linux")]

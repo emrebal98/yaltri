@@ -25,6 +25,8 @@ directories = "6"
 fend-core = "1.5"
 futures = "0.3"
 global-hotkey = "0.10"
+# Pure Rust backends: no hidapi C library, no libudev on Linux.
+hidapi = { version = "2.6", default-features = false, features = ["windows-native", "linux-native-basic-udev"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 interprocess = "2.4"
 jwalk = "0.9"
