@@ -121,7 +121,12 @@ for example all your games.
   Linux (which also covers Logitech receivers). A paired device that isn't connected is left out.
 - Logitech mice, keyboards and headsets on a Unifying, Lightspeed or Bolt receiver, or plugged in directly
   (HID++; on Linux through UPower).
-- Devices on their own USB dongle: ATK and Pulsar mice, SteelSeries Arctis GameBuds.
+- Devices on their own USB dongle: ATK and Pulsar mice, SteelSeries Arctis GameBuds, and the wireless headsets
+  [HeadsetControl](https://github.com/Sapd/HeadsetControl) reads with a plain request: SteelSeries Arctis 1, 7, 7X, 7P,
+  7+, 9, Pro Wireless and Nova 3P/3X, 5/5X, 7/7P, Pro Wireless; Corsair Void and other older Corsair wireless
+  headsets; HyperX Cloud II Wireless, Cloud Flight, Cloud Alpha Wireless; Logitech G533, G535, G633, G635, G733,
+  G933, G935, G PRO / PRO X / PRO X 2; Jabra Link 380/390, Evolve2 65 Flex, Evolve3 75; FIFINE HT6, MCHOSE X9,
+  V9 Pro; Lenovo Wireless VoIP Headset.
 - Windows 11 puts new tray icons under the ^ arrow; drag them next to the clock to keep them in view.
 - Linux needs a udev rule to read the dongles; **Settings › Battery** copies the command that adds it.
 

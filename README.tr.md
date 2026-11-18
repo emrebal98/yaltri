@@ -120,7 +120,12 @@ Yazarken filtrelemek için başa kısaltma ve boşluk yaz: `/u ` uygulama, `/d `
   (Logitech alıcılarını da kapsar). Eşleşmiş ama bağlı olmayan cihaz gösterilmez.
 - Unifying, Lightspeed ya da Bolt alıcılı veya doğrudan bağlı Logitech fare, klavye ve kulaklıklar
   (HID++; Linux'ta UPower üzerinden).
-- Kendi USB alıcısıyla bağlananlar: ATK ve Pulsar fareler, SteelSeries Arctis GameBuds.
+- Kendi USB alıcısıyla bağlananlar: ATK ve Pulsar fareler, SteelSeries Arctis GameBuds ve
+  [HeadsetControl](https://github.com/Sapd/HeadsetControl)'ün düz bir istekle okuduğu kablosuz kulaklıklar:
+  SteelSeries Arctis 1, 7, 7X, 7P, 7+, 9, Pro Wireless ve Nova 3P/3X, 5/5X, 7/7P, Pro Wireless; Corsair Void ve
+  diğer eski Corsair kablosuz kulaklıklar; HyperX Cloud II Wireless, Cloud Flight, Cloud Alpha Wireless; Logitech
+  G533, G535, G633, G635, G733, G933, G935, G PRO / PRO X / PRO X 2; Jabra Link 380/390, Evolve2 65 Flex,
+  Evolve3 75; FIFINE HT6, MCHOSE X9, V9 Pro; Lenovo Wireless VoIP Headset.
 - Windows 11 yeni tepsi simgelerini ^ okunun altına koyar; görünür kalmaları için saatin yanına sürükle.
 - Linux'ta alıcıları okumak için udev kuralı gerekir; **Ayarlar › Pil durumu** bunu ekleyen komutu kopyalar.
 
