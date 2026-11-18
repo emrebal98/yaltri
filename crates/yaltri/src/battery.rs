@@ -10,7 +10,7 @@ use gpui_kit::{
     Styled as _, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point, px, size,
 };
 use yaltri_platform::battery::{DeviceKind, Level, Reading};
-use yaltri_platform::icon::Tone;
+use yaltri_platform::battery_icon::{Fill, Gauge, Tone};
 use yaltri_platform::tray::BatteryBadge;
 
 use crate::daemon::Daemon;
@@ -33,7 +33,8 @@ const MARGIN: f32 = 12.;
 pub fn device_icon(kind: DeviceKind) -> &'static str {
     match kind {
         DeviceKind::Mouse => "mouse",
-        DeviceKind::Earbuds => "headphones",
+        DeviceKind::Earbuds | DeviceKind::Headset => "headphones",
+        DeviceKind::Keyboard => "keyboard",
     }
 }
 
@@ -63,6 +64,19 @@ fn tone(level: Level) -> Tone {
     }
 }
 
+/// How full the tray glyph is: each bud of a pair on its own.
+fn gauge(kind: DeviceKind, level: Level) -> Gauge {
+    let fill = |percent: u8, charging: bool| Fill {
+        percent,
+        tone: tone(Level::Single { percent, charging }),
+    };
+    let fills = match level {
+        Level::Single { percent, charging } => [Some(fill(percent, charging)), None],
+        Level::Pair { left, right } => [left.map(|p| fill(p, false)), right.map(|p| fill(p, false))],
+    };
+    Gauge { kind, number: level.headline().map(|n| (n, tone(level))), fills }
+}
+
 pub fn badge(reading: &Reading) -> BatteryBadge {
     let headline = reading.level.headline();
     let mut tooltip = reading.name.clone();
@@ -72,22 +86,12 @@ pub fn badge(reading: &Reading) -> BatteryBadge {
     if let Some(d) = detail(reading.level) {
         tooltip.push_str(&format!(" · {d}"));
     }
-    BatteryBadge {
-        text: headline.map_or_else(|| "-".to_owned(), |n| n.to_string()),
-        tone: tone(reading.level),
-        tooltip,
-        ..placeholder(reading.kind)
-    }
+    BatteryBadge { gauge: gauge(reading.kind, reading.level), tooltip }
 }
 
 /// What a device's icon starts with, before its first reading.
 pub fn placeholder(kind: DeviceKind) -> BatteryBadge {
-    BatteryBadge {
-        device: kind,
-        text: "-".into(),
-        tone: Tone::Normal,
-        tooltip: t("battery.title").into(),
-    }
+    BatteryBadge { gauge: Gauge { kind, number: None, fills: [None, None] }, tooltip: t("battery.title").into() }
 }
 
 /// Reads every device in the background, then updates the tray icons and an
@@ -282,8 +286,8 @@ mod tests {
         let (left, right) = detail.split_once(" · ").unwrap();
         assert!(left.contains("57") && !right.chars().any(|c| c.is_ascii_digit()), "{detail}");
         let b = badge(&reading);
-        assert_eq!(b.text, "57");
-        assert_eq!(b.tone, Tone::Normal);
+        assert_eq!(b.gauge.number, Some((57, Tone::Normal)));
+        assert_eq!(b.gauge.fills, [Some(Fill { percent: 57, tone: Tone::Normal }), None], "the docked bud stays empty");
         assert!(b.tooltip.starts_with("Arctis GameBuds · ") && b.tooltip.matches("57").count() == 2, "{}", b.tooltip);
     }
 

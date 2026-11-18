@@ -32,6 +32,7 @@ const FILES: &[(&str, &[u8])] = embed!(
     "icons/folder-open.svg",
     "icons/gamepad-2.svg",
     "icons/headphones.svg",
+    "icons/keyboard.svg",
     "icons/minus.svg",
     "icons/monitor.svg",
     "icons/mouse.svg",

@@ -23,16 +23,22 @@ use hidapi::{HidApi, HidDevice};
 pub enum DeviceKind {
     Mouse,
     Earbuds,
+    Headset,
+    Keyboard,
 }
 
 impl DeviceKind {
-    pub const ALL: [DeviceKind; 2] = [DeviceKind::Mouse, DeviceKind::Earbuds];
+    /// In the order their tray icons are made; new kinds go at the end so
+    /// existing icons keep their number (see `tray::BatteryIcon`).
+    pub const ALL: [DeviceKind; 4] = [DeviceKind::Mouse, DeviceKind::Earbuds, DeviceKind::Headset, DeviceKind::Keyboard];
 
     /// Stable machine name (tray icon ids).
     pub fn as_str(self) -> &'static str {
         match self {
             DeviceKind::Mouse => "mouse",
             DeviceKind::Earbuds => "earbuds",
+            DeviceKind::Headset => "headset",
+            DeviceKind::Keyboard => "keyboard",
         }
     }
 }

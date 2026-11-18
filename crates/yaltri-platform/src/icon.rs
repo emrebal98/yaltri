@@ -5,8 +5,6 @@
 
 use resvg::{tiny_skia, usvg};
 
-use crate::battery::DeviceKind;
-
 const TRAY_16_WHITE: &str = include_str!("../../../design/brand/tray-16-white.svg");
 const TRAY_16_DARK: &str = include_str!("../../../design/brand/tray-16-dark.svg");
 const TRAY_24_WHITE: &str = include_str!("../../../design/brand/tray-24-white.svg");
@@ -53,82 +51,6 @@ pub fn tray_rgba(size: u32, light_taskbar: bool) -> Vec<u8> {
         (false, true) => TRAY_24_DARK,
     };
     svg_rgba(svg, size, None).unwrap_or_else(|| vec![0; (size * size * 4) as usize])
-}
-
-/// How a battery number is colored in the tray.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Tone {
-    Normal,
-    Low,
-    Charging,
-}
-
-/// Digits in a 4×9 pixel font, one string per row (`#` is ink).
-fn digit_rows(c: char) -> Option<[&'static str; 9]> {
-    Some(match c {
-        '0' => [" ## ", "#  #", "#  #", "#  #", "#  #", "#  #", "#  #", "#  #", " ## "],
-        '1' => ["  # ", " ## ", "  # ", "  # ", "  # ", "  # ", "  # ", "  # ", " ###"],
-        '2' => [" ## ", "#  #", "   #", "   #", "  # ", " #  ", "#   ", "#   ", "####"],
-        '3' => [" ## ", "#  #", "   #", "   #", " ## ", "   #", "   #", "#  #", " ## "],
-        '4' => ["#  #", "#  #", "#  #", "#  #", "####", "   #", "   #", "   #", "   #"],
-        '5' => ["####", "#   ", "#   ", "### ", "   #", "   #", "   #", "#  #", " ## "],
-        '6' => [" ## ", "#   ", "#   ", "### ", "#  #", "#  #", "#  #", "#  #", " ## "],
-        '7' => ["####", "   #", "   #", "  # ", "  # ", " #  ", " #  ", " #  ", " #  "],
-        '8' => [" ## ", "#  #", "#  #", "#  #", " ## ", "#  #", "#  #", "#  #", " ## "],
-        '9' => [" ## ", "#  #", "#  #", "#  #", " ###", "   #", "   #", "   #", " ## "],
-        '-' => ["    ", "    ", "    ", "    ", "####", "    ", "    ", "    ", "    "],
-        _ => return None,
-    })
-}
-
-/// Device glyphs drawn for 16 px, where a scaled-down outline icon blurs.
-fn device_rows(kind: DeviceKind) -> &'static [&'static str] {
-    match kind {
-        DeviceKind::Mouse => &[" ### ", "# # #", "# # #", "#   #", "#   #", "#   #", "#   #", "#   #", "#   #", " ### "],
-        DeviceKind::Earbuds => &[" #### ", "#    #", "#    #", "#    #", "##  ##", "##  ##", "##  ##", "##  ##"],
-    }
-}
-
-/// `rows` as 1 px rects at (`x0`, `y0`) of the 16 px grid.
-fn pixel_rects(out: &mut String, rows: &[&str], x0: usize, y0: usize) {
-    for (y, row) in rows.iter().enumerate() {
-        for (x, c) in row.chars().enumerate() {
-            if c == '#' {
-                out.push_str(&format!(r#"<rect x="{}" y="{}" width="1" height="1"/>"#, x0 + x, y0 + y));
-            }
-        }
-    }
-}
-
-/// A tray icon for a battery on a 16 px grid, drawn at `size` px: the
-/// device on the left, `text` (digits or `-`) on the right. Three digits
-/// (100) take the whole width, without the device.
-pub fn battery_rgba(kind: DeviceKind, text: &str, tone: Tone, size: u32, light_taskbar: bool) -> Vec<u8> {
-    let ink = if light_taskbar { "#1A1A1A" } else { "#FFFFFF" };
-    let digit_ink = match tone {
-        Tone::Normal => ink,
-        Tone::Low => "#E5484D",
-        Tone::Charging => if light_taskbar { "#18794E" } else { "#3DD68C" },
-    };
-    let digits: Vec<[&str; 9]> = text.chars().filter_map(digit_rows).collect();
-    let width = (digits.len() * 5).saturating_sub(1);
-    let mut device = String::new();
-    // Right of the device: x 7..16, 9 px.
-    let left = if digits.len() > 2 {
-        16usize.saturating_sub(width) / 2
-    } else {
-        let rows = device_rows(kind);
-        pixel_rects(&mut device, rows, (6 - rows[0].len()) / 2, (16 - rows.len()) / 2);
-        7 + (9 - width) / 2
-    };
-    let mut number = String::new();
-    for (i, rows) in digits.iter().enumerate() {
-        pixel_rects(&mut number, rows, left + i * 5, 3);
-    }
-    let svg = format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><g fill="{ink}">{device}</g><g fill="{digit_ink}">{number}</g></svg>"#
-    );
-    svg_rgba(&svg, size, None).unwrap_or_else(|| vec![0; (size * size * 4) as usize])
 }
 
 /// Whether the taskbar uses the light theme (Windows "system" mode, which
@@ -202,25 +124,6 @@ mod tests {
             let expected = if light { 0x1A } else { 0xFF };
             assert!(rgba.chunks_exact(4).filter(|p| p[3] == 255).all(|p| p[0] == expected));
         }
-    }
-
-    #[test]
-    fn battery_icon_puts_the_device_left_of_crisp_digits() {
-        let rgba = battery_rgba(DeviceKind::Mouse, "35", Tone::Low, 16, false);
-        let px = |x: usize, y: usize| &rgba[(y * 16 + x) * 4..][..4];
-        // The mouse's top edge, in the taskbar ink.
-        assert_eq!(px(1, 3), &[255, 255, 255, 255]);
-        // "35" is 9 px wide from x = 7; the top row of "3" is " ## ".
-        assert_eq!(px(8, 3), &[0xE5, 0x48, 0x4D, 255]);
-        assert_eq!(px(7, 3)[3], 0);
-        // One digit sits in the middle of the number's space.
-        let one = battery_rgba(DeviceKind::Earbuds, "7", Tone::Normal, 16, true);
-        assert_eq!(&one[(3 * 16 + 9) * 4..][..4], &[0x1A, 0x1A, 0x1A, 255], "top of the 7");
-        // "100" is 14 px wide from x = 1, with no device; the 1's top at x = 3.
-        let full = battery_rgba(DeviceKind::Mouse, "100", Tone::Normal, 16, true);
-        assert_eq!(&full[(3 * 16 + 3) * 4..][..4], &[0x1A, 0x1A, 0x1A, 255], "the 1's top");
-        assert_eq!(full[(3 * 16 + 1) * 4 + 3], 0, "no mouse");
-        assert_eq!(battery_rgba(DeviceKind::Mouse, "-", Tone::Normal, 24, false).len(), 24 * 24 * 4);
     }
 
     #[test]
