@@ -29,8 +29,8 @@ pub struct MenuEntry {
 /// What a battery tray icon shows.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BatteryBadge {
-    /// Lucide SVG of the device, drawn above the number.
-    pub device_svg: &'static str,
+    /// Drawn left of the number.
+    pub device: DeviceKind,
     /// Digits, or `-` when there is no number.
     pub text: String,
     pub tone: crate::icon::Tone,
@@ -131,7 +131,7 @@ mod imp {
 
     fn battery_icon(badge: &BatteryBadge, light_taskbar: bool) -> Result<Icon> {
         let size = tray_icon_size();
-        let rgba = crate::icon::battery_rgba(badge.device_svg, &badge.text, badge.tone, size, light_taskbar);
+        let rgba = crate::icon::battery_rgba(badge.device, &badge.text, badge.tone, size, light_taskbar);
         Icon::from_rgba(rgba, size, size).context("building battery icon")
     }
 
@@ -368,7 +368,7 @@ mod imp {
                     width: size as i32,
                     height: size as i32,
                     data: crate::icon::argb(crate::icon::battery_rgba(
-                        self.badge.device_svg,
+                        self.badge.device,
                         &self.badge.text,
                         self.badge.tone,
                         size,

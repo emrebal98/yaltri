@@ -25,6 +25,8 @@ const LOW: u8 = 20;
 /// How long the card stays up.
 const CARD_FOR: Duration = Duration::from_secs(6);
 const CARD_WIDTH: f32 = 300.;
+const HEADER_HEIGHT: f32 = 44.;
+const ROW_HEIGHT: f32 = 56.;
 /// Gap between the card and the screen edge / taskbar.
 const MARGIN: f32 = 12.;
 
@@ -81,7 +83,7 @@ pub fn badge(reading: &Reading) -> BatteryBadge {
 /// What a device's icon starts with, before its first reading.
 pub fn placeholder(kind: DeviceKind) -> BatteryBadge {
     BatteryBadge {
-        device_svg: crate::assets::svg(&format!("icons/{}.svg", device_icon(kind))).unwrap_or_default(),
+        device: kind,
         text: "-".into(),
         tone: Tone::Normal,
         tooltip: t("battery.title").into(),
@@ -122,14 +124,17 @@ pub fn toggle(cx: &mut App) {
     // Fresh numbers while the card is up.
     refresh(cx);
     let rows = cx.global::<Daemon>().battery.len().max(1);
-    let window_size = size(px(CARD_WIDTH + 2. * MARGIN), px(rows as f32 * 56. + 52. + 2. * MARGIN));
+    // The card fills its window: a popup's "transparent" background is drawn
+    // dark on Windows, so the system draws the corners and shadow instead
+    // (`ui::frame_popup`), as for search.
+    let window_size = size(px(CARD_WIDTH), px(HEADER_HEIGHT + rows as f32 * ROW_HEIGHT + 4.));
     let mut bounds = Bounds::centered(None, window_size, cx);
     if let Some(display) = cx.primary_display() {
         // Above the tray: the bottom right of the area the taskbar leaves.
         let area = display.visible_bounds();
         bounds.origin = point(
-            area.origin.x + area.size.width - window_size.width,
-            area.origin.y + area.size.height - window_size.height,
+            area.origin.x + area.size.width - window_size.width - px(MARGIN),
+            area.origin.y + area.size.height - window_size.height - px(MARGIN),
         );
     }
     let options = WindowOptions {
@@ -142,10 +147,10 @@ pub fn toggle(cx: &mut App) {
         is_resizable: false,
         is_minimizable: false,
         app_id: Some("yaltri-battery".into()),
-        window_background: WindowBackgroundAppearance::Transparent,
+        window_background: WindowBackgroundAppearance::Opaque,
         ..Default::default()
     };
-    let handle: AnyWindowHandle = match gpui_kit::open_window(options, cx, |_, cx| cx.new(|_| Card)) {
+    let handle: AnyWindowHandle = match gpui_kit::open_window(options, cx, |_, cx| cx.new(|_| Card { framed_dark: None })) {
         Ok((handle, _)) => handle,
         Err(e) => {
             tracing::warn!("showing battery levels failed: {e:#}");
@@ -165,17 +170,25 @@ pub fn toggle(cx: &mut App) {
     .detach();
 }
 
-struct Card;
+struct Card {
+    /// Theme the system frame was drawn for.
+    framed_dark: Option<bool>,
+}
 
 impl Render for Card {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = theme::of(window);
+        if self.framed_dark != Some(p.dark) {
+            self.framed_dark = Some(p.dark);
+            ui::frame_popup(window, p);
+        }
+        ui::round_corners(window, R_LG);
         let readings = cx.global::<Daemon>().battery.clone();
         let empty = readings.is_empty();
         let rows = readings.into_iter().map(|r| {
             let low = r.level.headline().is_some_and(|n| n <= LOW) && !r.level.charging();
             div()
-                .h(px(56.))
+                .h(px(ROW_HEIGHT))
                 .flex()
                 .items_center()
                 .gap(px(12.))
@@ -209,20 +222,19 @@ impl Render for Card {
                     )
                 })
         });
-        div().size_full().p(px(MARGIN)).font_family(theme::ui_font()).child(
+        // Linux: X11 cuts the window to the rounded card (`ui::round_corners`);
+        // the border color behind it keeps the cut edge clean.
+        div().size_full().font_family(theme::ui_font()).when(cfg!(target_os = "linux"), |d| d.bg(p.border)).child(
             div()
                 .size_full()
                 .px(px(16.))
                 .flex()
                 .flex_col()
-                .rounded(px(R_LG))
                 .bg(p.surface)
-                .border_1()
-                .border_color(p.border)
-                .shadow(p.shadow_lg.clone())
+                .when(!cfg!(windows), |card| card.rounded(px(R_LG)).border_1().border_color(p.border))
                 .child(
                     div()
-                        .h(px(44.))
+                        .h(px(HEADER_HEIGHT))
                         .flex()
                         .items_center()
                         .gap(px(8.))
@@ -239,7 +251,7 @@ impl Render for Card {
                 .when(empty, |d| {
                     d.child(
                         div()
-                            .h(px(56.))
+                            .h(px(ROW_HEIGHT))
                             .flex()
                             .items_center()
                             .border_t_1()
