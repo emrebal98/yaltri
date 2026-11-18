@@ -22,6 +22,7 @@ use hidapi::{HidApi, HidDevice};
 
 #[cfg(windows)]
 mod bluetooth;
+mod headsets;
 #[cfg(windows)]
 mod logitech;
 #[cfg(target_os = "linux")]
@@ -86,28 +87,66 @@ pub struct Reading {
     pub level: Level,
 }
 
+/// How to find one family's HID collection and read it.
 struct Driver {
     vendor: u16,
-    /// `None`: every product of the vendor.
-    product: Option<u16>,
-    interface: i32,
-    usage_page: u16,
+    /// Empty: every product of the vendor.
+    products: &'static [u16],
+    /// The collection, where the system reports usages (Windows). Linux
+    /// hidraw has one node per interface and no usage page, so there
+    /// `interface` picks it.
+    usage_page: Option<u16>,
+    usage: Option<u16>,
+    /// `None`: the device's first collection, whatever it is.
+    interface: Option<i32>,
     kind: DeviceKind,
-    /// `Ok(None)`: the dongle is there but its device is off.
-    read: fn(&HidDevice) -> Result<Option<Level>>,
+    /// Gets the product id. `Ok(None)`: the dongle is there but its device
+    /// is off.
+    read: fn(&HidDevice, u16) -> Result<Option<Level>>,
+}
+
+impl Driver {
+    fn matches(&self, info: &hidapi::DeviceInfo) -> bool {
+        let interface_ok = self.interface.is_none_or(|i| i == info.interface_number());
+        self.vendor == info.vendor_id()
+            && (self.products.is_empty() || self.products.contains(&info.product_id()))
+            && match self.usage_page {
+                Some(page) if info.usage_page() != 0 => {
+                    page == info.usage_page() && self.usage.is_none_or(|u| u == info.usage())
+                }
+                _ => interface_ok,
+            }
+    }
 }
 
 const DRIVERS: &[Driver] = &[
     // ATK / Pulsar mice share Compx's dongle firmware.
-    Driver { vendor: 0x373b, product: None, interface: 1, usage_page: 0xff02, kind: DeviceKind::Mouse, read: read_kysona },
-    Driver { vendor: 0x3554, product: None, interface: 1, usage_page: 0xff02, kind: DeviceKind::Mouse, read: read_kysona },
+    Driver {
+        vendor: 0x373b,
+        products: &[],
+        usage_page: Some(0xff02),
+        usage: None,
+        interface: Some(1),
+        kind: DeviceKind::Mouse,
+        read: |dev, _| read_kysona(dev),
+    },
+    Driver {
+        vendor: 0x3554,
+        products: &[],
+        usage_page: Some(0xff02),
+        usage: None,
+        interface: Some(1),
+        kind: DeviceKind::Mouse,
+        read: |dev, _| read_kysona(dev),
+    },
     Driver {
         vendor: 0x1038,
-        product: Some(0x230a),
-        interface: 3,
-        usage_page: 0xffc0,
+        products: &[0x230a],
+        usage_page: Some(0xffc0),
+        usage: None,
+        interface: Some(3),
         kind: DeviceKind::Earbuds,
-        read: read_gamebuds,
+        read: |dev, _| read_gamebuds(dev),
     },
 ];
 
@@ -141,21 +180,20 @@ pub fn read_all() -> Vec<Reading> {
 
 fn read_dongles(api: &HidApi) -> Vec<Reading> {
     let mut readings: Vec<Reading> = Vec::new();
+    // Each device is asked once, on the first collection that matches.
+    let mut asked: Vec<(u16, u16)> = Vec::new();
     for info in api.device_list() {
-        let Some(driver) = DRIVERS.iter().find(|d| {
-            d.vendor == info.vendor_id()
-                && d.product.is_none_or(|p| p == info.product_id())
-                && d.interface == info.interface_number()
-                // Linux hidraw has one node per interface and no usage page.
-                && (info.usage_page() == d.usage_page || info.usage_page() == 0)
-        }) else {
+        let Some(driver) = DRIVERS.iter().chain(headsets::DRIVERS).find(|d| d.matches(info)) else {
             continue;
         };
-        if readings.iter().any(|r| r.kind == driver.kind) {
+        let id = (info.vendor_id(), info.product_id());
+        if asked.contains(&id) || readings.iter().any(|r| r.kind == driver.kind) {
             continue;
         }
+        asked.push(id);
         let name = info.product_string().unwrap_or("").trim().to_owned();
-        let level = info.open_device(api).context("opening").and_then(|dev| (driver.read)(&dev));
+        let level =
+            info.open_device(api).context("opening").and_then(|dev| (driver.read)(&dev, info.product_id()));
         match level {
             Ok(Some(level)) => readings.push(Reading { kind: driver.kind, name, level }),
             Ok(None) => {}
@@ -167,11 +205,16 @@ fn read_dongles(api: &HidApi) -> Vec<Reading> {
 
 /// Writes `query` and returns the first answer `accept` takes.
 fn ask(dev: &HidDevice, query: &[u8], accept: impl Fn(&[u8]) -> bool) -> Result<Vec<u8>> {
+    ask_within(dev, query, TIMEOUT, accept)
+}
+
+/// `ask`, waiting up to `wait` for each report.
+fn ask_within(dev: &HidDevice, query: &[u8], wait: Duration, accept: impl Fn(&[u8]) -> bool) -> Result<Vec<u8>> {
     dev.write(query).context("writing")?;
     let mut buf = [0u8; 128];
     // Other reports (button presses) can come first.
     for _ in 0..8 {
-        let n = dev.read_timeout(&mut buf, TIMEOUT.as_millis() as i32).context("reading")?;
+        let n = dev.read_timeout(&mut buf, wait.as_millis() as i32).context("reading")?;
         if n == 0 {
             break;
         }
