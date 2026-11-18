@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0](https://github.com/emrebal98/yaltri/compare/v0.4.0...v0.5.0) (2026-11-18)
+
+
+### Features
+
+* read logitech devices over hid++ ([#51](https://github.com/emrebal98/yaltri/issues/51)) ([48c8fca](https://github.com/emrebal98/yaltri/commit/48c8fcae512d5b9fe7d434948faebc205a018408))
+* read wireless headsets headsetcontrol supports ([#52](https://github.com/emrebal98/yaltri/issues/52)) ([04c9d0f](https://github.com/emrebal98/yaltri/commit/04c9d0f1391c93d361e621abe6adab52b32e6c46))
+* show bluetooth mice, keyboards and headsets ([#50](https://github.com/emrebal98/yaltri/issues/50)) ([c41f115](https://github.com/emrebal98/yaltri/commit/c41f115d3c0ce815318dcbeca2cc0adead118deb))
+* show mouse and earbud battery in the tray ([#49](https://github.com/emrebal98/yaltri/issues/49)) ([74cab44](https://github.com/emrebal98/yaltri/commit/74cab44d44c54a06b56f62d01eee8875f83ecb41))
+
 ## [0.4.0](https://github.com/emrebal98/yaltri/compare/v0.3.2...v0.4.0) (2026-11-16)
 
 
