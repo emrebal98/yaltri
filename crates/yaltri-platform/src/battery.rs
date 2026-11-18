@@ -22,6 +22,8 @@ use hidapi::{HidApi, HidDevice};
 
 #[cfg(windows)]
 mod bluetooth;
+#[cfg(windows)]
+mod logitech;
 #[cfg(target_os = "linux")]
 mod upower;
 
@@ -112,32 +114,32 @@ const DRIVERS: &[Driver] = &[
 const TIMEOUT: Duration = Duration::from_millis(500);
 
 /// Every supported device that is on, one per kind: dongles first, then
-/// what the system knows. Devices that fail to answer are logged and
-/// skipped.
+/// Logitech (Windows), then what the system knows. Devices that fail to
+/// answer are logged and skipped.
 pub fn read_all() -> Vec<Reading> {
-    let mut readings = read_dongles();
-    #[cfg(windows)]
-    let system = bluetooth::read();
-    #[cfg(target_os = "linux")]
-    let system = upower::read();
-    #[cfg(any(windows, target_os = "linux"))]
-    for reading in system {
-        if !readings.iter().any(|r| r.kind == reading.kind) {
-            readings.push(reading);
+    let api = HidApi::new().inspect_err(|e| tracing::warn!("listing HID devices failed: {e}")).ok();
+    let mut readings = Vec::new();
+    let mut add = |found: Vec<Reading>| {
+        for reading in found {
+            if !readings.iter().any(|r: &Reading| r.kind == reading.kind) {
+                readings.push(reading);
+            }
         }
+    };
+    if let Some(api) = &api {
+        add(read_dongles(api));
+        #[cfg(windows)]
+        add(logitech::read(api));
     }
+    #[cfg(windows)]
+    add(bluetooth::read());
+    #[cfg(target_os = "linux")]
+    add(upower::read());
     readings.sort_by_key(|r| r.kind);
     readings
 }
 
-fn read_dongles() -> Vec<Reading> {
-    let api = match HidApi::new() {
-        Ok(api) => api,
-        Err(e) => {
-            tracing::warn!("listing HID devices failed: {e}");
-            return Vec::new();
-        }
-    };
+fn read_dongles(api: &HidApi) -> Vec<Reading> {
     let mut readings: Vec<Reading> = Vec::new();
     for info in api.device_list() {
         let Some(driver) = DRIVERS.iter().find(|d| {
@@ -153,7 +155,7 @@ fn read_dongles() -> Vec<Reading> {
             continue;
         }
         let name = info.product_string().unwrap_or("").trim().to_owned();
-        let level = info.open_device(&api).context("opening").and_then(|dev| (driver.read)(&dev));
+        let level = info.open_device(api).context("opening").and_then(|dev| (driver.read)(&dev));
         match level {
             Ok(Some(level)) => readings.push(Reading { kind: driver.kind, name, level }),
             Ok(None) => {}
