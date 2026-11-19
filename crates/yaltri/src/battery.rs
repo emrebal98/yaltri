@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Bounds, Context, FontWeight, InteractiveElement as _, IntoElement,
+    Animation, AnimationExt as _, AnyWindowHandle, App, AppContext as _, Bounds, Context, FontWeight, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, StatefulInteractiveElement as _,
     Styled as _, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point, px, size,
 };
@@ -146,17 +146,38 @@ fn card_height(rows: usize) -> f32 {
 }
 
 /// How long the card takes to grow or shrink to a new row count.
-const RESIZE_FOR: Duration = Duration::from_millis(160);
-const RESIZE_STEPS: u32 = 10;
+/// How long a device that shows up after the card opened takes to fade in.
+const FADE_IN: Duration = Duration::from_millis(220);
+/// How long opening the card waits for the fresh reading, so it opens at
+/// the right size; a slower read (a headset waking up) resizes it after.
+const FRESH_WAIT: Duration = Duration::from_millis(600);
 
 /// Opens the card, or closes it when it is up.
 pub fn toggle(cx: &mut App) {
     if close(cx) {
         return;
     }
-    // Fresh numbers while the card is up.
+    // Fresh numbers, waited for a moment so the card opens with the
+    // devices that are there now.
     refresh(cx);
-    open(cx);
+    let daemon = cx.global_mut::<Daemon>();
+    if daemon.battery_opening {
+        return;
+    }
+    daemon.battery_opening = true;
+    cx.spawn(async move |cx| {
+        let step = Duration::from_millis(25);
+        let mut waited = Duration::ZERO;
+        while waited < FRESH_WAIT && cx.update(|cx| cx.global::<Daemon>().battery_busy) {
+            cx.background_executor().timer(step).await;
+            waited += step;
+        }
+        cx.update(|cx| {
+            cx.global_mut::<Daemon>().battery_opening = false;
+            open(cx);
+        });
+    })
+    .detach();
 }
 
 /// Opens the card for the devices last read.
@@ -187,7 +208,12 @@ fn open(cx: &mut App) {
         window_background: WindowBackgroundAppearance::Opaque,
         ..Default::default()
     };
-    let handle: AnyWindowHandle = match gpui_kit::open_window(options, cx, |_, cx| cx.new(|_| Card { framed_dark: None, rows, grow_up, _resize: None })) {
+    let handle: AnyWindowHandle = match gpui_kit::open_window(options, cx, |_, cx| cx.new(|cx| Card {
+        framed_dark: None,
+        rows,
+        grow_up,
+        opened_with: cx.global::<Daemon>().battery.iter().map(|r| r.kind).collect(),
+    })) {
         Ok((handle, _)) => handle,
         Err(e) => {
             tracing::warn!("showing battery levels failed: {e:#}");
@@ -281,40 +307,30 @@ fn place(card: (f32, f32), area: Rect, near: (f32, f32)) -> (f32, f32) {
 struct Card {
     /// Theme the system frame was drawn for.
     framed_dark: Option<bool>,
-    /// Rows the window is (or is growing to be) sized for.
+    /// Rows the window is sized for.
     rows: usize,
     /// The card is by a bottom panel: it keeps its bottom edge.
     grow_up: bool,
-    _resize: Option<gpui_kit::Task<()>>,
+    /// Devices on the card when it opened; the others fade in.
+    opened_with: Vec<DeviceKind>,
 }
 
 impl Card {
-    /// Eases the window to the height of `rows`: a device came or went
-    /// since the card opened (opening reads them again).
-    fn resize_to(&mut self, rows: usize, window: &mut Window, cx: &mut Context<Self>) {
-        self.rows = rows;
-        let from = window.bounds().size.height.as_f32();
-        let to = card_height(rows);
-        let grow_up = self.grow_up;
-        // Replacing the task stops a resize still running.
-        self._resize = Some(cx.spawn_in(window, async move |_, cx| {
-            for step in 1..=RESIZE_STEPS {
-                cx.background_executor().timer(RESIZE_FOR / RESIZE_STEPS).await;
-                let t = step as f32 / RESIZE_STEPS as f32;
-                let eased = 1. - (1. - t).powi(3);
-                let height = from + (to - from) * eased;
-                let ok = cx.update(|window, _| set_height(window, height, grow_up, step == RESIZE_STEPS));
-                if ok.is_err() {
-                    break;
-                }
-            }
-        }));
+    /// Fits the window to its rows: a device came or went since the card
+    /// opened (opening reads them again). In one step: animating a window's
+    /// size redraws it every frame and stutters on X11, so the new rows fade
+    /// in instead.
+    fn follow_rows(&mut self, rows: usize, window: &mut Window) {
+        if rows != self.rows {
+            self.rows = rows;
+            set_height(window, card_height(rows), self.grow_up);
+        }
     }
 }
 
 /// Sets the card window's height, keeping the edge by the panel. Where the
-/// window can't be placed (Wayland) GPUI resizes it, once, at the end.
-fn set_height(window: &mut Window, height: f32, grow_up: bool, last: bool) {
+/// window can't be placed (Wayland) GPUI resizes it, keeping the top.
+fn set_height(window: &mut Window, height: f32, grow_up: bool) {
     let physical = (height * window.scale_factor()).round();
     #[cfg(target_os = "linux")]
     if let Some(xid) = ui::x11_window(window) {
@@ -334,9 +350,7 @@ fn set_height(window: &mut Window, height: f32, grow_up: bool, last: bool) {
         }
     }
     let _ = (physical, grow_up);
-    if last {
-        window.resize(size(px(CARD_WIDTH), px(height)));
-    }
+    window.resize(size(px(CARD_WIDTH), px(height)));
 }
 
 impl Render for Card {
@@ -346,18 +360,17 @@ impl Render for Card {
             self.framed_dark = Some(p.dark);
             ui::frame_popup(window, p);
         }
-        let rows = card_rows(cx.global::<Daemon>());
-        if rows != self.rows {
-            self.resize_to(rows, window, cx);
-        }
+        self.follow_rows(card_rows(cx.global::<Daemon>()), window);
         ui::round_corners(window, R_LG);
         let readings = cx.global::<Daemon>().battery.clone();
         let empty = readings.is_empty();
         let checked = cx.global::<Daemon>().battery_checked;
         let rows = readings.into_iter().map(|r| {
             let low = r.level.headline().is_some_and(|n| n <= LOW) && !r.level.charging();
-            div()
+            let new = !self.opened_with.contains(&r.kind);
+            let row = div()
                 .h(px(ROW_HEIGHT))
+                .flex_none()
                 .flex()
                 .items_center()
                 .gap(px(12.))
@@ -389,7 +402,13 @@ impl Render for Card {
                             })
                             .child(percent(n)),
                     )
-                })
+                });
+            if new {
+                let fade = Animation::new(FADE_IN).with_easing(gpui_kit::ease_out_quint());
+                row.with_animation(("battery-new", r.kind as usize), fade, |row, t| row.opacity(t)).into_any_element()
+            } else {
+                row.into_any_element()
+            }
         });
         // Linux: X11 cuts the window to the rounded card (`ui::round_corners`);
         // the border color behind it keeps the cut edge clean.
@@ -399,11 +418,13 @@ impl Render for Card {
                 .px(px(16.))
                 .flex()
                 .flex_col()
+                .overflow_hidden()
                 .bg(p.surface)
                 .when(!cfg!(windows), |card| card.rounded(px(R_LG)).border_1().border_color(p.border))
                 .child(
                     div()
                         .h(px(HEADER_HEIGHT))
+                        .flex_none()
                         .flex()
                         .items_center()
                         .gap(px(8.))
@@ -440,6 +461,7 @@ impl Render for Card {
                     d.child(
                         div()
                             .h(px(ROW_HEIGHT))
+                .flex_none()
                             .flex()
                             .items_center()
                             .border_t_1()

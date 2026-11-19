@@ -53,6 +53,8 @@ pub struct Daemon {
     pub battery_checked: bool,
     /// The card listing the levels, while it is up.
     pub battery_window: Option<AnyWindowHandle>,
+    /// The card waits for a reading before it opens.
+    pub battery_opening: bool,
     /// App theme the tray menu icons were drawn for.
     tray_apps_light: bool,
     hotkeys: Option<Hotkeys>,
@@ -129,6 +131,7 @@ pub fn run(paths: Paths, session: Session, initial: Option<Command>) -> Result<(
                 battery_busy: false,
                 battery_checked: false,
                 battery_window: None,
+                battery_opening: false,
                 tray_apps_light: yaltri_platform::icon::apps_use_light_theme(),
                 hotkeys: None,
                 hotkeys_suspended: false,
