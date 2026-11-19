@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/emrebal98/yaltri/compare/v0.5.0...v0.5.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* grant battery access in one click and show update progress on the button ([#55](https://github.com/emrebal98/yaltri/issues/55)) ([a1ae2a9](https://github.com/emrebal98/yaltri/commit/a1ae2a954f327542e03742ca16b1a0960cb2a083))
+
 ## [0.5.0](https://github.com/emrebal98/yaltri/compare/v0.4.0...v0.5.0) (2026-11-18)
 
 
