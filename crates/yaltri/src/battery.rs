@@ -113,12 +113,21 @@ pub fn refresh(cx: &mut App) {
         cx.update(|cx| {
             let daemon = cx.global_mut::<Daemon>();
             daemon.battery_busy = false;
+            let rows_before = card_rows(daemon);
             if daemon.settings.battery.enabled {
                 daemon.battery_checked = true;
                 daemon.set_battery(readings);
             }
+            let resized = card_rows(daemon) != rows_before;
             if let Some(card) = daemon.battery_window {
-                let _ = card.update(cx, |_, window, _| window.refresh());
+                if resized {
+                    // A device came or went: the card is sized to its rows
+                    // and can't be moved, so open it again at the new size.
+                    close(cx);
+                    open(cx);
+                } else {
+                    let _ = card.update(cx, |_, window, _| window.refresh());
+                }
             }
         });
     })
@@ -134,6 +143,11 @@ fn close(cx: &mut App) -> bool {
     true
 }
 
+/// Rows the card has: one per device, or the one saying there is none.
+fn card_rows(daemon: &Daemon) -> usize {
+    daemon.battery.len().max(1)
+}
+
 /// Opens the card, or closes it when it is up.
 pub fn toggle(cx: &mut App) {
     if close(cx) {
@@ -141,7 +155,12 @@ pub fn toggle(cx: &mut App) {
     }
     // Fresh numbers while the card is up.
     refresh(cx);
-    let rows = cx.global::<Daemon>().battery.len().max(1);
+    open(cx);
+}
+
+/// Opens the card for the devices last read.
+fn open(cx: &mut App) {
+    let rows = card_rows(cx.global::<Daemon>());
     // The card fills its window: a popup's "transparent" background is drawn
     // dark on Windows, so the system draws the corners and shadow instead
     // (`ui::frame_popup`), as for search.
