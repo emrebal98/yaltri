@@ -15,6 +15,7 @@
 //!
 //! Linux needs read access to `/dev/hidraw*` (a udev rule) for this.
 
+use std::sync::Mutex;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -180,7 +181,29 @@ pub fn read_all() -> Vec<Reading> {
     readings
 }
 
+/// Last level of each mouse on a dongle, by (vendor, product): a mouse
+/// sleeps after ~20 s still and its dongle then answers "not connected", so
+/// it would drop out of the tray between uses.
+static LAST_SEEN: Mutex<Vec<((u16, u16), Reading)>> = Mutex::new(Vec::new());
+
+/// What to show for a dongle given its answer: the reading, or for a mouse
+/// that sleeps (or misses an answer) the last one it gave while its dongle
+/// is still plugged in. `last` keeps one reading per dongle.
+fn remember(last: &mut Vec<((u16, u16), Reading)>, id: (u16, u16), answer: Option<Reading>) -> Option<Reading> {
+    match answer {
+        Some(reading) => {
+            last.retain(|(i, _)| *i != id);
+            if reading.kind == DeviceKind::Mouse {
+                last.push((id, reading.clone()));
+            }
+            Some(reading)
+        }
+        None => last.iter().find(|(i, _)| *i == id).map(|(_, r)| r.clone()),
+    }
+}
+
 fn read_dongles(api: &HidApi) -> Vec<Reading> {
+    let mut last = LAST_SEEN.lock().unwrap_or_else(|e| e.into_inner());
     let mut readings: Vec<Reading> = Vec::new();
     // Each device is asked once, on the first collection that matches.
     let mut asked: Vec<(u16, u16)> = Vec::new();
@@ -196,12 +219,17 @@ fn read_dongles(api: &HidApi) -> Vec<Reading> {
         let name = info.product_string().unwrap_or("").trim().to_owned();
         let level =
             info.open_device(api).context("opening").and_then(|dev| (driver.read)(&dev, info.product_id()));
-        match level {
-            Ok(Some(level)) => readings.push(Reading { kind: driver.kind, name, level }),
-            Ok(None) => {}
-            Err(e) => tracing::debug!(device = name, "reading battery failed: {e:#}"),
-        }
+        let answer = match level {
+            Ok(level) => level.map(|level| Reading { kind: driver.kind, name, level }),
+            Err(e) => {
+                tracing::debug!(device = name, "reading battery failed: {e:#}");
+                None
+            }
+        };
+        readings.extend(remember(&mut last, id, answer));
     }
+    // A dongle that was pulled out takes its mouse with it.
+    last.retain(|(id, _)| asked.contains(id));
     readings
 }
 
@@ -302,6 +330,23 @@ mod tests {
         assert!(!is_kysona_answer(KYSONA_BATTERY)(&online));
         assert!(parse_kysona_online(&online));
         assert_eq!(parse_kysona_battery(&battery), Some(Level::Single { percent: 35, charging: true }));
+    }
+
+    #[test]
+    fn a_sleeping_mouse_keeps_its_last_level() {
+        let mut last = Vec::new();
+        let mouse = Reading { kind: DeviceKind::Mouse, name: "ATK".into(), level: Level::Single { percent: 95, charging: false } };
+        let id = (0x373b, 0x111a);
+        assert_eq!(remember(&mut last, id, Some(mouse.clone())), Some(mouse.clone()));
+        // Asleep: the dongle says it is not connected.
+        assert_eq!(remember(&mut last, id, None), Some(mouse.clone()));
+        // Another dongle's answer doesn't stand in for it.
+        assert_eq!(remember(&mut last, (0x3554, 1), None), None);
+        // Earbuds in the case are gone, not asleep.
+        let buds = Reading { kind: DeviceKind::Earbuds, name: "GameBuds".into(), level: Level::Pair { left: Some(60), right: None } };
+        let buds_id = (0x1038, 0x230a);
+        remember(&mut last, buds_id, Some(buds));
+        assert_eq!(remember(&mut last, buds_id, None), None);
     }
 
     /// Answer of Arctis GameBuds with both buds out at 60% and 74%.
