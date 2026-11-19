@@ -160,7 +160,7 @@ yaltri uninstall          # uninstall (--purge: settings and history too)
 ## Updates
 
 Yaltri checks for a new version once a day and downloads it in the background. When it is ready,
-**Restart to update** appears in the tray menu and under **Settings → About**; click it and Yaltri updates
+**Install update** appears in the tray menu and under **Settings → About**; click it and Yaltri updates
 and starts again in a few seconds. Turn the daily check off under **Settings → General**; the button in
 Settings → About still checks on demand. On Linux this works for the copy `install.sh` installed; a copy
 from a package manager is updated by it.
