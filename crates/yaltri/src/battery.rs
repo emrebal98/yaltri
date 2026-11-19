@@ -113,21 +113,13 @@ pub fn refresh(cx: &mut App) {
         cx.update(|cx| {
             let daemon = cx.global_mut::<Daemon>();
             daemon.battery_busy = false;
-            let rows_before = card_rows(daemon);
             if daemon.settings.battery.enabled {
                 daemon.battery_checked = true;
                 daemon.set_battery(readings);
             }
-            let resized = card_rows(daemon) != rows_before;
+            // The card resizes itself to the rows it now has.
             if let Some(card) = daemon.battery_window {
-                if resized {
-                    // A device came or went: the card is sized to its rows
-                    // and can't be moved, so open it again at the new size.
-                    close(cx);
-                    open(cx);
-                } else {
-                    let _ = card.update(cx, |_, window, _| window.refresh());
-                }
+                let _ = card.update(cx, |_, window, _| window.refresh());
             }
         });
     })
@@ -148,6 +140,15 @@ fn card_rows(daemon: &Daemon) -> usize {
     daemon.battery.len().max(1)
 }
 
+/// The card's height in logical px for `rows`.
+fn card_height(rows: usize) -> f32 {
+    HEADER_HEIGHT + rows as f32 * ROW_HEIGHT + 4.
+}
+
+/// How long the card takes to grow or shrink to a new row count.
+const RESIZE_FOR: Duration = Duration::from_millis(160);
+const RESIZE_STEPS: u32 = 10;
+
 /// Opens the card, or closes it when it is up.
 pub fn toggle(cx: &mut App) {
     if close(cx) {
@@ -164,11 +165,14 @@ fn open(cx: &mut App) {
     // The card fills its window: a popup's "transparent" background is drawn
     // dark on Windows, so the system draws the corners and shadow instead
     // (`ui::frame_popup`), as for search.
-    let window_size = size(px(CARD_WIDTH), px(HEADER_HEIGHT + rows as f32 * ROW_HEIGHT + 4.));
+    let window_size = size(px(CARD_WIDTH), px(card_height(rows)));
     let mut bounds = Bounds::centered(None, window_size, cx);
+    let mut grow_up = false;
     if let Some((area, near)) = tray_spot(cx) {
         let (x, y) = place((CARD_WIDTH, window_size.height.as_f32()), area, near);
         bounds.origin = point(px(x), px(y));
+        // In the lower half the card hangs from its bottom edge.
+        grow_up = y + window_size.height.as_f32() / 2. > area.1 + area.3 / 2.;
     }
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -183,7 +187,7 @@ fn open(cx: &mut App) {
         window_background: WindowBackgroundAppearance::Opaque,
         ..Default::default()
     };
-    let handle: AnyWindowHandle = match gpui_kit::open_window(options, cx, |_, cx| cx.new(|_| Card { framed_dark: None })) {
+    let handle: AnyWindowHandle = match gpui_kit::open_window(options, cx, |_, cx| cx.new(|_| Card { framed_dark: None, rows, grow_up, _resize: None })) {
         Ok((handle, _)) => handle,
         Err(e) => {
             tracing::warn!("showing battery levels failed: {e:#}");
@@ -277,6 +281,62 @@ fn place(card: (f32, f32), area: Rect, near: (f32, f32)) -> (f32, f32) {
 struct Card {
     /// Theme the system frame was drawn for.
     framed_dark: Option<bool>,
+    /// Rows the window is (or is growing to be) sized for.
+    rows: usize,
+    /// The card is by a bottom panel: it keeps its bottom edge.
+    grow_up: bool,
+    _resize: Option<gpui_kit::Task<()>>,
+}
+
+impl Card {
+    /// Eases the window to the height of `rows`: a device came or went
+    /// since the card opened (opening reads them again).
+    fn resize_to(&mut self, rows: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.rows = rows;
+        let from = window.bounds().size.height.as_f32();
+        let to = card_height(rows);
+        let grow_up = self.grow_up;
+        // Replacing the task stops a resize still running.
+        self._resize = Some(cx.spawn_in(window, async move |_, cx| {
+            for step in 1..=RESIZE_STEPS {
+                cx.background_executor().timer(RESIZE_FOR / RESIZE_STEPS).await;
+                let t = step as f32 / RESIZE_STEPS as f32;
+                let eased = 1. - (1. - t).powi(3);
+                let height = from + (to - from) * eased;
+                let ok = cx.update(|window, _| set_height(window, height, grow_up, step == RESIZE_STEPS));
+                if ok.is_err() {
+                    break;
+                }
+            }
+        }));
+    }
+}
+
+/// Sets the card window's height, keeping the edge by the panel. Where the
+/// window can't be placed (Wayland) GPUI resizes it, once, at the end.
+fn set_height(window: &mut Window, height: f32, grow_up: bool, last: bool) {
+    let physical = (height * window.scale_factor()).round();
+    #[cfg(target_os = "linux")]
+    if let Some(xid) = ui::x11_window(window) {
+        if let Err(e) = yaltri_platform::x11::set_height(xid, physical as u32, grow_up) {
+            tracing::debug!("resizing the battery card failed: {e:#}");
+        }
+        return;
+    }
+    #[cfg(windows)]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        if let Ok(handle) = HasWindowHandle::window_handle(window)
+            && let RawWindowHandle::Win32(h) = handle.as_raw()
+        {
+            yaltri_platform::screen::set_height(h.hwnd.get(), physical as i32, grow_up);
+            return;
+        }
+    }
+    let _ = (physical, grow_up);
+    if last {
+        window.resize(size(px(CARD_WIDTH), px(height)));
+    }
 }
 
 impl Render for Card {
@@ -285,6 +345,10 @@ impl Render for Card {
         if self.framed_dark != Some(p.dark) {
             self.framed_dark = Some(p.dark);
             ui::frame_popup(window, p);
+        }
+        let rows = card_rows(cx.global::<Daemon>());
+        if rows != self.rows {
+            self.resize_to(rows, window, cx);
         }
         ui::round_corners(window, R_LG);
         let readings = cx.global::<Daemon>().battery.clone();
