@@ -38,7 +38,7 @@ HEX, RGB, HSL, OKLCH ya da beş başka formatta kopyala.
 
 ### 🔋 Pil durumu
 
-Kablosuz fare ve kulaklığının şarjı saatin yanında. Tıklayınca kulaklıklar tek tek görünür.
+Kablosuz fare ve kulaklığının şarjı sistem tepsisinde. Tıklayınca kulaklıklar tek tek görünür.
 **Ayarlar**'dan açana kadar kapalıdır.
 
 Her araç **Ayarlar**'dan kapatılabilir.
