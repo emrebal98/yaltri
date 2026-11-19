@@ -169,3 +169,27 @@ fn intersect(a: (i32, i32, i32, i32), b: (i32, i32, i32, i32)) -> Option<(i32, i
     let (x1, y1) = ((a.0 + a.2).min(b.0 + b.2), (a.1 + a.3).min(b.1 + b.3));
     (x1 > x0 && y1 > y0).then_some((x0, y0, x1 - x0, y1 - y0))
 }
+
+/// Sets `window`'s height (physical px), keeping its top edge, or its
+/// bottom edge when `grow_up`. In one request, so a card by a bottom panel
+/// does not jump. GPUI can only resize, keeping the top.
+pub fn set_height(window: u32, height: u32, grow_up: bool) -> Result<()> {
+    use std::sync::OnceLock;
+    use x11rb::connection::Connection as _;
+    use x11rb::protocol::xproto::ConfigureWindowAux;
+    use x11rb::rust_connection::RustConnection;
+
+    // Called every frame of an animation: one connection for all of them.
+    static CONN: OnceLock<Option<RustConnection>> = OnceLock::new();
+    let conn = CONN
+        .get_or_init(|| x11rb::connect(None).inspect_err(|e| tracing::warn!("connecting to X server: {e}")).ok().map(|(c, _)| c))
+        .as_ref()
+        .context("no X server")?;
+    // An override-redirect popup is a child of the root: these are screen
+    // coordinates.
+    let geo = conn.get_geometry(window)?.reply().context("reading window geometry")?;
+    let y = if grow_up { i32::from(geo.y) + i32::from(geo.height) - height as i32 } else { i32::from(geo.y) };
+    conn.configure_window(window, &ConfigureWindowAux::new().y(y).height(height))?;
+    conn.flush()?;
+    Ok(())
+}

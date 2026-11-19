@@ -247,3 +247,20 @@ mod tests {
         assert!(s.pixel(s.x, s.y).is_some());
     }
 }
+
+/// Sets a window's height (physical px), keeping its top edge, or its bottom
+/// edge when `grow_up`. GPUI can only resize, keeping the top.
+#[cfg(windows)]
+pub fn set_height(hwnd: isize, height: i32, grow_up: bool) {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowRect, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
+    let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+    // SAFETY: `hwnd` is a live window handle owned by this process.
+    unsafe {
+        if GetWindowRect(hwnd as _, &mut r) == 0 {
+            return;
+        }
+        let y = if grow_up { r.bottom - height } else { r.top };
+        SetWindowPos(hwnd as _, std::ptr::null_mut(), r.left, y, r.right - r.left, height, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+}
