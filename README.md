@@ -38,7 +38,7 @@ and copy it as HEX, RGB, HSL, OKLCH or five other formats.
 
 ### 🔋 Battery
 
-Your wireless mouse and earbuds' charge next to the clock. Click it to see each earbud.
+Your wireless mouse and earbuds' charge in the system tray. Click it to see each earbud.
 Off until you switch it on in **Settings**.
 
 Each tool can be switched off in **Settings**.
