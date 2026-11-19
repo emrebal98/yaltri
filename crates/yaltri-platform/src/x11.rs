@@ -115,3 +115,57 @@ mod tests {
         assert!(!covers(&rects, 0, 0));
     }
 }
+
+/// Where the pointer is and the part of its monitor windows may use, in
+/// physical px of the X screen (which spans every monitor).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PointerArea {
+    pub pointer: (i32, i32),
+    /// x, y, width, height: the monitor under the pointer minus the panels
+    /// (`_NET_WORKAREA`).
+    pub area: (i32, i32, i32, i32),
+    /// Width of the whole X screen, to turn these into GPUI's logical px.
+    pub screen_width: u16,
+}
+
+/// The pointer and its monitor's work area: a tray popup opens there, by
+/// the panel the user just clicked.
+pub fn pointer_area() -> Result<PointerArea> {
+    use x11rb::connection::Connection as _;
+    use x11rb::protocol::randr::ConnectionExt as _;
+    use x11rb::protocol::xproto::AtomEnum;
+
+    let (conn, screen) = x11rb::connect(None).context("connecting to X server")?;
+    let root = &conn.setup().roots[screen];
+    let (root_win, screen_width, screen_height) = (root.root, root.width_in_pixels, root.height_in_pixels);
+    let ptr = conn.query_pointer(root_win)?.reply().context("reading the pointer")?;
+    let pointer = (i32::from(ptr.root_x), i32::from(ptr.root_y));
+
+    let monitors = conn.randr_get_monitors(root_win, true)?.reply().context("listing monitors")?.monitors;
+    let monitor = monitors
+        .iter()
+        .map(|m| (i32::from(m.x), i32::from(m.y), i32::from(m.width), i32::from(m.height)))
+        .find(|&(x, y, w, h)| (x..x + w).contains(&pointer.0) && (y..y + h).contains(&pointer.1))
+        .unwrap_or((0, 0, i32::from(screen_width), i32::from(screen_height)));
+
+    // The window manager's work area of the first desktop; it spans every
+    // monitor, so cut it to this one.
+    let atom = conn.intern_atom(false, b"_NET_WORKAREA")?.reply()?.atom;
+    let work = conn
+        .get_property(false, root_win, atom, AtomEnum::CARDINAL, 0, 4)?
+        .reply()
+        .ok()
+        .and_then(|r| r.value32().map(|v| v.map(|n| n as i32).collect::<Vec<_>>()))
+        .filter(|v| v.len() == 4);
+    let area = match work {
+        Some(w) => intersect(monitor, (w[0], w[1], w[2], w[3])).unwrap_or(monitor),
+        None => monitor,
+    };
+    Ok(PointerArea { pointer, area, screen_width })
+}
+
+fn intersect(a: (i32, i32, i32, i32), b: (i32, i32, i32, i32)) -> Option<(i32, i32, i32, i32)> {
+    let (x0, y0) = (a.0.max(b.0), a.1.max(b.1));
+    let (x1, y1) = ((a.0 + a.2).min(b.0 + b.2), (a.1 + a.3).min(b.1 + b.3));
+    (x1 > x0 && y1 > y0).then_some((x0, y0, x1 - x0, y1 - y0))
+}

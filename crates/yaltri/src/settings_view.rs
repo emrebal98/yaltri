@@ -67,9 +67,13 @@ pub fn open_at(tool: Option<ToolId>, cx: &mut App) {
     }
 }
 
-/// Linux: lets the logged-in user open the battery tool's dongles
-/// (`/dev/hidraw*`), vendor ids as in `yaltri_platform::battery`.
-const UDEV_COMMAND: &str = r#"echo 'KERNEL=="hidraw*", ATTRS{idVendor}=="373b|3554|1038", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/70-yaltri-battery.rules && sudo udevadm control --reload && sudo udevadm trigger"#;
+/// The battery tool can open the dongles: Linux needs a udev rule for it.
+fn udev_installed() -> bool {
+    #[cfg(target_os = "linux")]
+    return yaltri_platform::battery::udev::installed();
+    #[cfg(not(target_os = "linux"))]
+    true
+}
 
 /// Localized tool name.
 pub fn tool_name(tool: ToolId) -> &'static str {
@@ -113,6 +117,10 @@ pub struct SettingsView {
     scroll: ScrollHandle,
     /// Section to bring to the top on the next render.
     scroll_to: Option<ToolId>,
+    /// Linux: the battery tool's udev rule is in place (always true
+    /// elsewhere), and whether it is being installed.
+    udev_installed: bool,
+    udev_busy: bool,
     _toast_timer: Option<Task<()>>,
     _refresh: Task<()>,
     _subscriptions: Vec<gpui_kit::Subscription>,
@@ -163,6 +171,8 @@ impl SettingsView {
             _toast_timer: None,
             scroll: ScrollHandle::new(),
             scroll_to: None,
+            udev_installed: udev_installed(),
+            udev_busy: false,
             _refresh: refresh,
             _subscriptions: subscriptions,
         }
@@ -814,6 +824,66 @@ impl SettingsView {
         ]
     }
 
+    /// Linux, until the udev rule is in: a button that installs it through
+    /// the system's password prompt, or the command to paste without polkit.
+    #[cfg(target_os = "linux")]
+    fn udev_row(&self, p: &Palette, cx: &mut Context<Self>) -> Div {
+        use yaltri_platform::battery::udev;
+        if !udev::can_install() {
+            return setting_row(56., false, t("settings.battery.linux"), Some(t("settings.battery.linux_hint_manual")), p)
+                .child(
+                    ui::button("battery-udev-copy", ButtonKind::Secondary, p)
+                        .child(ui::icon("copy", 14., p.foreground))
+                        .child(t("settings.battery.copy"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(udev::manual_command()));
+                            this.flash(false, t("settings.battery.copied").into(), cx);
+                        })),
+                );
+        }
+        let busy = self.udev_busy;
+        let button = ui::button("battery-udev", ButtonKind::Primary, p)
+            .child(ui::icon("check", 14., p.accent_fg))
+            .child(if busy { t("settings.battery.granting") } else { t("settings.battery.grant") })
+            .when(busy, |b| b.opacity(0.7).cursor_default())
+            .when(!busy, |b| b.on_click(cx.listener(|this, _, _, cx| this.install_udev(cx))));
+        setting_row(56., false, t("settings.battery.linux"), Some(t("settings.battery.linux_hint")), p).child(button)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn udev_row(&self, _: &Palette, _: &mut Context<Self>) -> Div {
+        div()
+    }
+
+    /// Installs the udev rule in the background, then reads the devices
+    /// again now that the dongles open.
+    #[cfg(target_os = "linux")]
+    fn install_udev(&mut self, cx: &mut Context<Self>) {
+        use yaltri_platform::battery::udev::{self, Outcome};
+        self.udev_busy = true;
+        cx.notify();
+        let job = cx.background_executor().spawn(async { udev::install() });
+        cx.spawn(async move |this, cx| {
+            let result = job.await;
+            let _ = this.update(cx, |this, cx| {
+                this.udev_busy = false;
+                this.udev_installed = udev_installed();
+                match result {
+                    Ok(Outcome::Installed) => {
+                        this.flash(false, t("settings.battery.granted").into(), cx);
+                        crate::battery::refresh(cx);
+                    }
+                    Ok(Outcome::Cancelled) => cx.notify(),
+                    Err(e) => {
+                        tracing::warn!("installing the battery udev rule failed: {e:#}");
+                        this.flash(true, tf("settings.battery.grant_failed", &[("error", &format!("{e:#}"))]).into(), cx);
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
     fn battery_section(&self, p: &Palette, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let enabled = self.row(ToolId::Battery).enabled;
         let toggle = ui::switch("battery-enabled", enabled, p)
@@ -846,18 +916,8 @@ impl SettingsView {
                     }),
             );
         }
-        if cfg!(target_os = "linux") {
-            body = body.child(
-                setting_row(56., false, t("settings.battery.linux"), Some(t("settings.battery.linux_hint")), p).child(
-                    ui::button("battery-udev-copy", ButtonKind::Secondary, p)
-                        .child(ui::icon("copy", 14., p.foreground))
-                        .child(t("settings.battery.copy"))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(UDEV_COMMAND.into()));
-                            this.flash(false, t("settings.battery.copied").into(), cx);
-                        })),
-                ),
-            );
+        if !self.udev_installed {
+            body = body.child(self.udev_row(p, cx));
         }
         let body = body.when(!enabled, |d| d.child(blocker()));
         vec![
@@ -873,12 +933,10 @@ impl SettingsView {
         let mut version = tf("settings.about.version", &[("version", update::VERSION)]);
         let state = cx.global::<Daemon>().update.clone();
         let status = match &state {
-            UpdateState::Idle => None,
-            UpdateState::Checking => Some(t("settings.about.checking").to_owned()),
+            // Checking, downloading and ready show on the button.
+            UpdateState::Idle | UpdateState::Checking | UpdateState::Downloading(_) | UpdateState::Ready { .. } => None,
             UpdateState::UpToDate => Some(t("settings.about.up_to_date").to_owned()),
             UpdateState::Available(r) => Some(tf("settings.about.available", &[("version", &r.version)])),
-            UpdateState::Downloading(r) => Some(tf("settings.about.downloading", &[("version", &r.version)])),
-            UpdateState::Ready { release, .. } => Some(tf("settings.about.ready", &[("version", &release.version)])),
             UpdateState::Failed => Some(t("settings.about.check_failed").to_owned()),
         };
         if let Some(status) = status {
@@ -902,10 +960,20 @@ impl SettingsView {
                 })
         };
 
+        // While checking or downloading the button says so and does nothing.
+        let busy = |label: String, icon: &'static str| {
+            ui::button("update", ButtonKind::Secondary, p)
+                .child(ui::icon(icon, 14., p.muted))
+                .child(label)
+                .text_color(p.muted)
+                .cursor_default()
+        };
         let update_button = match state {
-            UpdateState::Ready { .. } => ui::button("update", ButtonKind::Primary, p)
+            UpdateState::Checking => busy(t("settings.about.checking").to_owned(), "refresh-cw"),
+            UpdateState::Downloading(r) => busy(tf("settings.about.downloading", &[("version", &r.version)]), "download"),
+            UpdateState::Ready { release, .. } => ui::button("update", ButtonKind::Primary, p)
                 .child(ui::icon("download", 14., p.accent_fg))
-                .child(t("settings.about.restart"))
+                .child(tf("settings.about.install", &[("version", &release.version)]))
                 .on_click(|_, _, cx| {
                     let _ = cx.global::<Daemon>().tx.unbounded_send(Command::Update);
                 }),

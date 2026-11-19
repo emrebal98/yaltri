@@ -26,6 +26,8 @@ mod headsets;
 #[cfg(windows)]
 mod logitech;
 #[cfg(target_os = "linux")]
+pub mod udev;
+#[cfg(target_os = "linux")]
 mod upower;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

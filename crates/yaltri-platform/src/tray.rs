@@ -31,6 +31,10 @@ pub struct MenuEntry {
 pub struct BatteryBadge {
     pub gauge: crate::battery_icon::Gauge,
     pub tooltip: String,
+    /// Label of the menu item that opens the card (Linux: GNOME's panel
+    /// opens an icon's menu on a click and activates it only on a double
+    /// click, so the card is reached from the menu).
+    pub open_label: String,
 }
 
 /// Prefix of battery icon ids; a click on one sends `toggle battery`.
@@ -369,6 +373,21 @@ mod imp {
         }
         fn activate(&mut self, _x: i32, _y: i32) {
             let _ = self.tx.unbounded_send(Command::Toggle(ToolId::Battery));
+        }
+        fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+            use ksni::menu::StandardItem;
+            vec![
+                StandardItem { label: self.badge.tooltip.clone(), enabled: false, ..Default::default() }.into(),
+                ksni::MenuItem::Separator,
+                StandardItem {
+                    label: self.badge.open_label.clone(),
+                    activate: Box::new(|this: &mut Self| {
+                        let _ = this.tx.unbounded_send(Command::Toggle(ToolId::Battery));
+                    }),
+                    ..Default::default()
+                }
+                .into(),
+            ]
         }
     }
 

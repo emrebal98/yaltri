@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Bounds, Context, FontWeight, IntoElement, ParentElement as _, Render,
+    AnyWindowHandle, App, AppContext as _, Bounds, Context, FontWeight, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, StatefulInteractiveElement as _,
     Styled as _, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point, px, size,
 };
 use yaltri_platform::battery::{DeviceKind, Level, Reading};
@@ -15,7 +16,7 @@ use yaltri_platform::tray::BatteryBadge;
 
 use crate::daemon::Daemon;
 use crate::i18n::{t, tf};
-use crate::theme::{self, R_LG};
+use crate::theme::{self, R_LG, R_SM};
 use crate::ui::{self, TextStyle as _};
 
 /// How often the levels are read.
@@ -86,12 +87,16 @@ pub fn badge(reading: &Reading) -> BatteryBadge {
     if let Some(d) = detail(reading.level) {
         tooltip.push_str(&format!(" · {d}"));
     }
-    BatteryBadge { gauge: gauge(reading.kind, reading.level), tooltip }
+    BatteryBadge { gauge: gauge(reading.kind, reading.level), tooltip, open_label: t("settings.battery.tray_open").into() }
 }
 
 /// What a device's icon starts with, before its first reading.
 pub fn placeholder(kind: DeviceKind) -> BatteryBadge {
-    BatteryBadge { gauge: Gauge { kind, number: None, fills: [None, None] }, tooltip: t("battery.title").into() }
+    BatteryBadge {
+        gauge: Gauge { kind, number: None, fills: [None, None] },
+        tooltip: t("battery.title").into(),
+        open_label: t("settings.battery.tray_open").into(),
+    }
 }
 
 /// Reads every device in the background, then updates the tray icons and an
@@ -120,10 +125,18 @@ pub fn refresh(cx: &mut App) {
     .detach();
 }
 
+/// Closes the card if it is up; says whether it was.
+fn close(cx: &mut App) -> bool {
+    let Some(old) = cx.global_mut::<Daemon>().battery_window.take() else {
+        return false;
+    };
+    let _ = old.update(cx, |_, window, _| window.remove_window());
+    true
+}
+
 /// Opens the card, or closes it when it is up.
 pub fn toggle(cx: &mut App) {
-    if let Some(old) = cx.global_mut::<Daemon>().battery_window.take() {
-        let _ = old.update(cx, |_, window, _| window.remove_window());
+    if close(cx) {
         return;
     }
     // Fresh numbers while the card is up.
@@ -134,13 +147,9 @@ pub fn toggle(cx: &mut App) {
     // (`ui::frame_popup`), as for search.
     let window_size = size(px(CARD_WIDTH), px(HEADER_HEIGHT + rows as f32 * ROW_HEIGHT + 4.));
     let mut bounds = Bounds::centered(None, window_size, cx);
-    if let Some(display) = cx.primary_display() {
-        // Above the tray: the bottom right of the area the taskbar leaves.
-        let area = display.visible_bounds();
-        bounds.origin = point(
-            area.origin.x + area.size.width - window_size.width - px(MARGIN),
-            area.origin.y + area.size.height - window_size.height - px(MARGIN),
-        );
+    if let Some((area, near)) = tray_spot(cx) {
+        let (x, y) = place((CARD_WIDTH, window_size.height.as_f32()), area, near);
+        bounds.origin = point(px(x), px(y));
     }
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -173,6 +182,77 @@ pub fn toggle(cx: &mut App) {
         });
     })
     .detach();
+}
+
+/// x, y, width, height in logical px.
+type Rect = (f32, f32, f32, f32);
+
+/// The area the card may cover and a point by the tray icon that was
+/// clicked, in logical px.
+fn tray_spot(cx: &App) -> Option<(Rect, (f32, f32))> {
+    let display = cx.primary_display()?;
+    let rect = |b: Bounds<gpui_kit::Pixels>| {
+        (b.origin.x.as_f32(), b.origin.y.as_f32(), b.size.width.as_f32(), b.size.height.as_f32())
+    };
+    let whole = rect(display.bounds());
+    // X11: the pointer is on the icon or the menu just under it, whichever
+    // corner or edge the panel is on.
+    #[cfg(target_os = "linux")]
+    if cx.global::<Daemon>().session == yaltri_platform::session::Session::X11 {
+        match yaltri_platform::x11::pointer_area() {
+            Ok(pa) => {
+                // The X screen spans every monitor; GPUI's display is the
+                // same, in logical px.
+                let scale = f32::from(pa.screen_width) / whole.2.max(1.);
+                let (x, y, w, h) = pa.area;
+                let area = (x as f32 / scale, y as f32 / scale, w as f32 / scale, h as f32 / scale);
+                return Some((area, (pa.pointer.0 as f32 / scale, pa.pointer.1 as f32 / scale)));
+            }
+            Err(e) => tracing::debug!("reading the pointer failed: {e:#}"),
+        }
+    }
+    // Otherwise the tray is at the end of the taskbar, on the edge the work
+    // area leaves out: the right end of a top or bottom bar, the bottom of
+    // a side one. GNOME's top bar is not left out on Wayland, so assume it.
+    let area = rect(display.visible_bounds());
+    let (x, y, w, h) = area;
+    let right = x + w;
+    let bottom = y + h;
+    let near = if x > whole.0 {
+        (x, bottom)
+    } else if right < whole.0 + whole.2 {
+        (right, bottom)
+    } else if y > whole.1 || gnome() {
+        (right, y)
+    } else {
+        (right, bottom)
+    };
+    Some((area, near))
+}
+
+fn gnome() -> bool {
+    cfg!(target_os = "linux")
+        && std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.split(':').any(|d| d.eq_ignore_ascii_case("gnome")))
+}
+
+/// Where a `card` (width, height) goes in `area`: against the edge nearest
+/// `near`, lined up with it along that edge, never past the area.
+fn place(card: (f32, f32), area: Rect, near: (f32, f32)) -> (f32, f32) {
+    let (x, y, w, h) = area;
+    let (px_, py) = (near.0.clamp(x, x + w), near.1.clamp(y, y + h));
+    let clamp_x = |v: f32| v.min(x + w - card.0 - MARGIN).max(x + MARGIN);
+    let clamp_y = |v: f32| v.min(y + h - card.1 - MARGIN).max(y + MARGIN);
+    let (left, right, top, bottom) = (px_ - x, x + w - px_, py - y, y + h - py);
+    let nearest = left.min(right).min(top).min(bottom);
+    if nearest == top {
+        (clamp_x(px_ - card.0 / 2.), y + MARGIN)
+    } else if nearest == bottom {
+        (clamp_x(px_ - card.0 / 2.), y + h - card.1 - MARGIN)
+    } else if nearest == left {
+        (x + MARGIN, clamp_y(py - card.1 / 2.))
+    } else {
+        (x + w - card.0 - MARGIN, clamp_y(py - card.1 / 2.))
+    }
 }
 
 struct Card {
@@ -247,10 +327,29 @@ impl Render for Card {
                         .child(ui::icon("battery-medium", 16., p.muted))
                         .child(
                             div()
+                                .flex_1()
                                 .ts(13., 18.)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(p.foreground)
                                 .child(t("battery.title")),
+                        )
+                        .child(
+                            div()
+                                .id("battery-close")
+                                .size(px(24.))
+                                .mr(px(-4.))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(R_SM))
+                                .cursor_pointer()
+                                .hover(|s| s.bg(p.list_hover))
+                                .child(ui::icon("x", 14., p.muted))
+                                // Inside the card's own window: close it directly.
+                                .on_click(|_, window, cx| {
+                                    cx.global_mut::<Daemon>().battery_window = None;
+                                    window.remove_window();
+                                }),
                         ),
                 )
                 .children(rows)
@@ -291,6 +390,26 @@ mod tests {
         assert_eq!(b.gauge.number, Some((57, Tone::Normal)));
         assert_eq!(b.gauge.fills, [Some(Fill { percent: 57, tone: Tone::Normal }), None], "the docked bud stays empty");
         assert!(b.tooltip.starts_with("Arctis GameBuds · ") && b.tooltip.matches("57").count() == 2, "{}", b.tooltip);
+    }
+
+    #[test]
+    fn card_opens_by_the_tray_in_every_corner() {
+        let area = (0., 0., 1920., 1080.);
+        let card = (300., 200.);
+        let m = MARGIN;
+        // Top bar, icon at the right end (GNOME).
+        assert_eq!(place(card, area, (1900., 5.)), (1920. - 300. - m, m));
+        // Bottom bar, right end (Windows, KDE).
+        assert_eq!(place(card, area, (1900., 1075.)), (1920. - 300. - m, 1080. - 200. - m));
+        // Top left and bottom left.
+        assert_eq!(place(card, area, (10., 3.)), (m, m));
+        assert_eq!(place(card, area, (10., 1078.)), (m, 1080. - 200. - m));
+        // Mid bar: under the icon.
+        assert_eq!(place(card, area, (1000., 2.)), (850., m));
+        // Side panel on the right: by the icon's height.
+        assert_eq!(place(card, area, (1915., 500.)), (1920. - 300. - m, 400.));
+        // Offset monitor.
+        assert_eq!(place(card, (1920., 32., 1920., 1048.), (3830., 40.)), (3840. - 300. - m, 32. + m));
     }
 
     #[test]
