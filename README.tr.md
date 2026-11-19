@@ -159,7 +159,7 @@ yaltri uninstall          # kaldır (--purge: ayarlar ve geçmiş de)
 ## Güncellemeler
 
 Yaltri günde bir kez yeni sürüm var mı diye bakar ve varsa arka planda indirir. Hazır olunca tepsi
-menüsünde ve **Ayarlar → Hakkında**'da **Yeniden başlat ve güncelle** çıkar; tıklayınca Yaltri birkaç saniyede
+menüsünde ve **Ayarlar → Hakkında**'da **Güncellemeyi yükle** çıkar; tıklayınca Yaltri birkaç saniyede
 güncellenip yeniden açılır. Günlük denetimi **Ayarlar → Genel**'den kapatabilirsin; Ayarlar → Hakkında'daki
 buton yine istediğinde denetler. Linux'ta bu, `install.sh` ile kurulan kopya için çalışır; paket yöneticisiyle
 kurulan kopyayı paket yöneticisi günceller.
