@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.2](https://github.com/emrebal98/yaltri/compare/v0.5.1...v0.5.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* **battery:** keep a sleeping mouse in the tray ([#60](https://github.com/emrebal98/yaltri/issues/60)) ([747f173](https://github.com/emrebal98/yaltri/commit/747f173bc2258bb559237c0e5fea6b573af1b76f))
+* **battery:** size the card to the devices found after it opens ([#59](https://github.com/emrebal98/yaltri/issues/59)) ([2b44a23](https://github.com/emrebal98/yaltri/commit/2b44a23155aedd2f2dccd108a96c7bdc80d0a533))
+
 ## [0.5.1](https://github.com/emrebal98/yaltri/compare/v0.5.0...v0.5.1) (2026-11-19)
 
 
