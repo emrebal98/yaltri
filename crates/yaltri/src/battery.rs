@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Bounds, Context, FontWeight, IntoElement, ParentElement as _, Render,
+    AnyWindowHandle, App, AppContext as _, Bounds, Context, FontWeight, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, StatefulInteractiveElement as _,
     Styled as _, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point, px, size,
 };
 use yaltri_platform::battery::{DeviceKind, Level, Reading};
@@ -15,7 +16,7 @@ use yaltri_platform::tray::BatteryBadge;
 
 use crate::daemon::Daemon;
 use crate::i18n::{t, tf};
-use crate::theme::{self, R_LG};
+use crate::theme::{self, R_LG, R_SM};
 use crate::ui::{self, TextStyle as _};
 
 /// How often the levels are read.
@@ -124,10 +125,18 @@ pub fn refresh(cx: &mut App) {
     .detach();
 }
 
+/// Closes the card if it is up; says whether it was.
+fn close(cx: &mut App) -> bool {
+    let Some(old) = cx.global_mut::<Daemon>().battery_window.take() else {
+        return false;
+    };
+    let _ = old.update(cx, |_, window, _| window.remove_window());
+    true
+}
+
 /// Opens the card, or closes it when it is up.
 pub fn toggle(cx: &mut App) {
-    if let Some(old) = cx.global_mut::<Daemon>().battery_window.take() {
-        let _ = old.update(cx, |_, window, _| window.remove_window());
+    if close(cx) {
         return;
     }
     // Fresh numbers while the card is up.
@@ -318,10 +327,29 @@ impl Render for Card {
                         .child(ui::icon("battery-medium", 16., p.muted))
                         .child(
                             div()
+                                .flex_1()
                                 .ts(13., 18.)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(p.foreground)
                                 .child(t("battery.title")),
+                        )
+                        .child(
+                            div()
+                                .id("battery-close")
+                                .size(px(24.))
+                                .mr(px(-4.))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(R_SM))
+                                .cursor_pointer()
+                                .hover(|s| s.bg(p.list_hover))
+                                .child(ui::icon("x", 14., p.muted))
+                                // Inside the card's own window: close it directly.
+                                .on_click(|_, window, cx| {
+                                    cx.global_mut::<Daemon>().battery_window = None;
+                                    window.remove_window();
+                                }),
                         ),
                 )
                 .children(rows)
