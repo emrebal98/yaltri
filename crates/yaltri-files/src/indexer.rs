@@ -146,6 +146,7 @@ impl Worker {
             Err(e) => tracing::info!("no usable index snapshot ({e:#}), full scan needed"),
         }
         self.publish(Phase::Loading);
+        release_free_memory();
 
         // Start watching before the walk so nothing changing mid-scan is missed.
         let _watcher = self.start_watcher();
@@ -246,6 +247,7 @@ impl Worker {
         if self.dirty {
             self.save();
         }
+        release_free_memory();
     }
 
     /// Debounces a burst of change events, then reconciles each affected
@@ -385,6 +387,21 @@ impl Worker {
             }
             Err(e) => tracing::warn!("saving index snapshot failed: {e:#}"),
         }
+    }
+}
+
+/// Hands memory freed after a scan back to the OS. A rescan briefly
+/// allocates tens of MiB (child table, per-folder maps, walker buffers) on
+/// several threads; glibc keeps such per-thread arenas mapped, so without
+/// this the process stays at its scan peak.
+fn release_free_memory() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        unsafe extern "C" {
+            fn malloc_trim(pad: usize) -> std::ffi::c_int;
+        }
+        // SAFETY: plain glibc call with no pointers; safe from any thread.
+        unsafe { malloc_trim(0) };
     }
 }
 

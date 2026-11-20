@@ -1,8 +1,8 @@
 //! On-disk snapshot of the index so startup does not wait for a full walk.
 //!
 //! Layout (little endian): magic, version, scope fingerprint, then the
-//! `names` and `lower` arenas (chunk count, then length + bytes per chunk)
-//! and the packed entries. A mismatch in any
+//! `lower` and `originals` arenas (chunk count, then length + bytes per
+//! chunk), the packed entries and the `cased` table. A mismatch in any
 //! header field means "rebuild".
 
 use std::fs::{self, File};
@@ -11,10 +11,10 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
-use crate::index::{Arena, Entry, FileIndex};
+use crate::index::{Arena, Entry, EntryId, FileIndex};
 
 const MAGIC: &[u8; 8] = b"YALTRIDX";
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 /// Sanity limits for a corrupt header (offsets are u32: 1024 x 4 MiB).
 const MAX_CHUNKS: usize = 1024;
 const MAX_CHUNK_BYTES: usize = 4 << 20;
@@ -30,7 +30,7 @@ pub fn save(index: &FileIndex, fingerprint: u64, path: &Path) -> Result<()> {
         w.write_all(MAGIC)?;
         w.write_all(&VERSION.to_le_bytes())?;
         w.write_all(&fingerprint.to_le_bytes())?;
-        for arena in [&index.names, &index.lower] {
+        for arena in [&index.lower, &index.originals] {
             w.write_all(&(arena.chunks.len() as u32).to_le_bytes())?;
             for chunk in &arena.chunks {
                 w.write_all(&(chunk.len() as u64).to_le_bytes())?;
@@ -43,6 +43,11 @@ pub fn save(index: &FileIndex, fingerprint: u64, path: &Path) -> Result<()> {
             w.write_all(&e.parent.to_le_bytes())?;
             w.write_all(&e.name_len.to_le_bytes())?;
             w.write_all(&[e.flags])?;
+        }
+        w.write_all(&(index.cased.len() as u64).to_le_bytes())?;
+        for (id, off) in &index.cased {
+            w.write_all(&id.to_le_bytes())?;
+            w.write_all(&off.to_le_bytes())?;
         }
         w.flush()?;
     }
@@ -64,12 +69,8 @@ pub fn load(path: &Path, fingerprint: u64) -> Result<FileIndex> {
     if read_u64(&mut r)? != fingerprint {
         bail!("index scope changed");
     }
-    let names = read_arena(&mut r)?;
     let lower = read_arena(&mut r)?;
-    let lens = |a: &Arena| a.chunks.iter().map(Vec::len).collect::<Vec<_>>();
-    if lens(&names) != lens(&lower) {
-        bail!("corrupt index: arena mismatch");
-    }
+    let originals = read_arena(&mut r)?;
     let count = read_u64(&mut r)? as usize;
     let mut raw = vec![0u8; count.checked_mul(ENTRY_BYTES).context("corrupt index")?];
     r.read_exact(&mut raw)?;
@@ -83,15 +84,39 @@ pub fn load(path: &Path, fingerprint: u64) -> Result<FileIndex> {
             flags: chunk[10],
         };
         let valid = e.name_off >= prev_off
-            && names.get(e.name_off, e.name_len as usize + 1).is_some()
-            && names.get(e.name_off, e.name_len as usize).is_some_and(|b| std::str::from_utf8(b).is_ok());
+            && valid_name(&lower, e.name_off, e.name_len);
         if !valid {
             bail!("corrupt index: bad entry");
         }
         prev_off = e.name_off;
         entries.push(e);
     }
-    Ok(FileIndex::from_parts(names, lower, entries))
+    drop(raw);
+
+    let cased_count = read_u64(&mut r)? as usize;
+    if cased_count != entries.iter().filter(|e| e.is_cased()).count() {
+        bail!("corrupt index: cased table mismatch");
+    }
+    let mut raw = vec![0u8; cased_count.checked_mul(8).context("corrupt index")?];
+    r.read_exact(&mut raw)?;
+    let mut cased: Vec<(EntryId, u32)> = Vec::with_capacity(cased_count);
+    for chunk in raw.chunks_exact(8) {
+        let id = u32::from_le_bytes(chunk[0..4].try_into()?);
+        let off = u32::from_le_bytes(chunk[4..8].try_into()?);
+        let valid = cased.last().is_none_or(|&(prev, _)| id > prev)
+            && entries.get(id as usize).is_some_and(|e| e.is_cased() && valid_name(&originals, off, e.name_len));
+        if !valid {
+            bail!("corrupt index: bad cased entry");
+        }
+        cased.push((id, off));
+    }
+    Ok(FileIndex::from_parts(lower, originals, cased, entries))
+}
+
+/// `len` bytes of UTF-8 followed by the `\0` terminator at `off`.
+fn valid_name(arena: &Arena, off: u32, len: u16) -> bool {
+    arena.get(off, len as usize + 1).is_some()
+        && arena.get(off, len as usize).is_some_and(|b| std::str::from_utf8(b).is_ok())
 }
 
 fn read_u32(r: &mut impl Read) -> Result<u32> {
@@ -149,7 +174,10 @@ mod tests {
         save(&idx, 42, &path).unwrap();
         let back = load(&path, 42).unwrap();
         assert_eq!(back.entries, idx.entries);
-        assert_eq!(back.names, idx.names);
+        assert_eq!(back.lower, idx.lower);
+        assert_eq!(back.originals, idx.originals);
+        assert_eq!(back.cased, idx.cased);
+        assert_eq!(back.path_of(2).unwrap(), Path::new("/r/Klasör/Dosya.txt"));
         assert_eq!(back.len(), idx.len());
         assert_eq!(back.search("dosya", 5, &|_| 0).len(), 1);
         fs::remove_file(path).unwrap();

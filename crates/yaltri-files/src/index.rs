@@ -1,10 +1,15 @@
 //! Compact in-memory file index.
 //!
 //! Every entry stores only its own name and its parent's id; full paths are
-//! rebuilt on demand. Names live in one byte arena (`names`) and a same-length
-//! lowercase copy (`lower`), each name terminated by `\0`. A search is a single
-//! `memmem` pass over `lower`; each hit's offset maps back to its entry by
-//! binary search, because entries are appended in arena order.
+//! rebuilt on demand. Names live lowercased in one byte arena (`lower`), each
+//! terminated by `\0`. A search is a single `memmem` pass over `lower`; each
+//! hit's offset maps back to its entry by binary search, because entries are
+//! appended in arena order.
+//!
+//! Most names are already lowercase (85% of 2.7M on a Linux `/`), so only
+//! the others keep their original spelling, in a second arena (`originals`)
+//! found through `cased`. That halves the index compared with storing every
+//! name twice.
 //!
 //! Arenas are made of fixed 4 MiB chunks rather than one big Vec: growing
 //! never copies (and briefly doubles) a 100 MiB block, it just adds a chunk.
@@ -23,6 +28,8 @@ const FLAG_ROOT: u8 = 4;
 /// system trees). Inherited by children; such results rank lower.
 const FLAG_NOISE: u8 = 8;
 const NOISE_PENALTY: u32 = 150;
+/// The name is not all lowercase: its original spelling is in `originals`.
+const FLAG_CASED: u8 = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Entry {
@@ -44,6 +51,9 @@ impl Entry {
     }
     pub fn is_noise(&self) -> bool {
         self.flags & FLAG_NOISE != 0
+    }
+    pub fn is_cased(&self) -> bool {
+        self.flags & FLAG_CASED != 0
     }
 }
 
@@ -89,7 +99,7 @@ impl Arena {
         self.chunks.iter().enumerate().map(|(i, c)| (i << CHUNK_BITS, c.as_slice()))
     }
 
-    fn capacity(&self) -> usize {
+    pub(crate) fn capacity(&self) -> usize {
         self.chunks.iter().map(Vec::capacity).sum()
     }
 
@@ -125,8 +135,13 @@ fn is_noise_dir(name: &str, parent_is_root: bool) -> bool {
 
 #[derive(Clone, Debug, Default)]
 pub struct FileIndex {
-    pub(crate) names: Arena,
+    /// Every name, lowercased (`fold_case`). `Entry::name_off` points here.
     pub(crate) lower: Arena,
+    /// Original spelling of the names that differ from their lowercase form.
+    pub(crate) originals: Arena,
+    /// `(entry, offset in originals)` for every `FLAG_CASED` entry, sorted by
+    /// entry id (ids only grow, so pushing keeps it sorted).
+    pub(crate) cased: Vec<(EntryId, u32)>,
     pub(crate) entries: Vec<Entry>,
     deleted: usize,
 }
@@ -160,9 +175,9 @@ impl FileIndex {
         Self::default()
     }
 
-    pub(crate) fn from_parts(names: Arena, lower: Arena, entries: Vec<Entry>) -> Self {
+    pub(crate) fn from_parts(lower: Arena, originals: Arena, cased: Vec<(EntryId, u32)>, entries: Vec<Entry>) -> Self {
         let deleted = entries.iter().filter(|e| e.is_deleted()).count();
-        Self { names, lower, entries, deleted }
+        Self { lower, originals, cased, entries, deleted }
     }
 
     /// Live (not deleted) entries.
@@ -181,17 +196,25 @@ impl FileIndex {
 
     /// Approximate heap usage in bytes.
     pub fn memory_bytes(&self) -> usize {
-        self.names.capacity() + self.lower.capacity() + self.entries.capacity() * size_of::<Entry>()
+        self.lower.capacity()
+            + self.originals.capacity()
+            + self.cased.capacity() * size_of::<(EntryId, u32)>()
+            + self.entries.capacity() * size_of::<Entry>()
     }
 
-    fn push_raw(&mut self, parent: EntryId, name: &str, flags: u8) -> EntryId {
+    fn push_raw(&mut self, parent: EntryId, name: &str, mut flags: u8) -> EntryId {
         // Names longer than u16::MAX bytes do not exist on real filesystems.
         let name = &name[..name.len().min(u16::MAX as usize)];
         let id = self.entries.len() as EntryId;
         grow(&mut self.entries, 1);
-        let name_off = self.names.push(name.as_bytes());
-        let lower_off = self.lower.push(fold_case(name).as_bytes());
-        debug_assert_eq!(name_off, lower_off, "fold_case keeps byte length");
+        let lower = fold_case(name);
+        debug_assert_eq!(lower.len(), name.len(), "fold_case keeps byte length");
+        let name_off = self.lower.push(lower.as_bytes());
+        if lower != name {
+            flags |= FLAG_CASED;
+            grow(&mut self.cased, 1);
+            self.cased.push((id, self.originals.push(name.as_bytes())));
+        }
         self.entries.push(Entry { name_off, parent, name_len: name.len() as u16, flags });
         id
     }
@@ -213,8 +236,9 @@ impl FileIndex {
 
     /// Releases growth slack after a bulk build.
     pub fn shrink_to_fit(&mut self) {
-        self.names.shrink_last();
         self.lower.shrink_last();
+        self.originals.shrink_last();
+        self.cased.shrink_to_fit();
         self.entries.shrink_to_fit();
     }
 
@@ -224,7 +248,15 @@ impl FileIndex {
 
     pub fn name(&self, id: EntryId) -> &str {
         let e = &self.entries[id as usize];
-        let bytes = self.names.get(e.name_off, e.name_len as usize).unwrap_or_default();
+        let bytes = if e.is_cased() {
+            self.cased
+                .binary_search_by_key(&id, |&(i, _)| i)
+                .ok()
+                .and_then(|at| self.originals.get(self.cased[at].1, e.name_len as usize))
+        } else {
+            self.lower.get(e.name_off, e.name_len as usize)
+        }
+        .unwrap_or_default();
         // Names are pushed from &str, so this never fails.
         std::str::from_utf8(bytes).unwrap_or_default()
     }
@@ -462,15 +494,31 @@ mod tests {
         for i in 0..600_000 {
             idx.push(root, &format!("some-file-name-{i}.txt"), false);
         }
-        assert!(idx.names.chunks.len() >= 3);
+        assert!(idx.lower.chunks.len() >= 3);
         idx.shrink_to_fit();
         let before = idx.memory_bytes();
         idx.push(root, "one-more.txt", false);
         // At most: last chunk of each arena refilled + 12.5% entry growth.
         let limit = before + 2 * CHUNK_SIZE + idx.entries.len() * size_of::<Entry>() / 8 + 4096;
         assert!(idx.memory_bytes() <= limit, "{before} -> {}", idx.memory_bytes());
-        assert!(idx.names.chunks.iter().all(|c| c.capacity() <= CHUNK_SIZE));
+        assert!(idx.lower.chunks.iter().all(|c| c.capacity() <= CHUNK_SIZE));
         assert_eq!(idx.search("some-file-name-599999", 1, &no_boost).len(), 1);
+    }
+
+    #[test]
+    fn lowercase_names_are_stored_once() {
+        let mut idx = FileIndex::new();
+        let root = idx.add_root(Path::new("/r"));
+        for i in 0..1000 {
+            idx.push(root, &format!("lowercase-file-{i}.txt"), false);
+        }
+        let mixed = idx.push(root, "Mixed Case.TXT", false);
+        // Only the mixed-case name keeps a separate original.
+        assert_eq!(idx.cased.len(), 1);
+        assert_eq!(idx.name(mixed), "Mixed Case.TXT");
+        assert_eq!(idx.name(mixed - 1), "lowercase-file-999.txt");
+        let hits = idx.search("mixed case", 5, &no_boost);
+        assert_eq!(hits[0].path, Path::new("/r/Mixed Case.TXT"));
     }
 
     #[test]
