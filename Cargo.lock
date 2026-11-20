@@ -8944,6 +8944,7 @@ name = "yaltri-apps"
 version = "0.5.3"
 dependencies = [
  "image",
+ "notify",
  "nucleo-matcher",
  "serde",
  "serde_json",

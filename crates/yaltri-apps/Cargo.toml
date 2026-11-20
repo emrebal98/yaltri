@@ -12,6 +12,9 @@ shell-words.workspace = true
 tracing.workspace = true
 yaltri-core.workspace = true
 
+[target.'cfg(not(windows))'.dependencies]
+notify.workspace = true
+
 [target.'cfg(windows)'.dependencies]
 image.workspace = true
 windows.workspace = true

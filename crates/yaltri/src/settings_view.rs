@@ -591,7 +591,7 @@ impl SettingsView {
                         ui::button("rescan", ButtonKind::Secondary, p)
                             .child(ui::icon("refresh-cw", 14., p.foreground))
                             .child(t("settings.rescan"))
-                            .on_click(cx.listener(|_, _, _, cx| cx.global::<Daemon>().rescan_files())),
+                            .on_click(cx.listener(|_, _, _, cx| cx.global::<Daemon>().rescan())),
                     ),
             )
             .child(group_label(
