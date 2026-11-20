@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/emrebal98/yaltri/compare/v0.5.2...v0.5.3) (2026-11-20)
+
+
+### Performance
+
+* **files:** store each file name once and trim freed memory after scans ([#62](https://github.com/emrebal98/yaltri/issues/62)) ([c5a9b0e](https://github.com/emrebal98/yaltri/commit/c5a9b0ee5faf21bd1ca03a0681684616f061d633))
+
 ## [0.5.2](https://github.com/emrebal98/yaltri/compare/v0.5.1...v0.5.2) (2026-11-19)
 
 
