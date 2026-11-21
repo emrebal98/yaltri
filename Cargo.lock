@@ -8913,7 +8913,7 @@ checksum = "7a5a4b21e1a62b67a2970e6831bc091d7b87e119e7f9791aef9702e3bef04448"
 
 [[package]]
 name = "yaltri"
-version = "0.5.3"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "embed-resource",
@@ -8941,7 +8941,7 @@ dependencies = [
 
 [[package]]
 name = "yaltri-apps"
-version = "0.5.3"
+version = "0.6.0"
 dependencies = [
  "image",
  "notify",
@@ -8957,7 +8957,7 @@ dependencies = [
 
 [[package]]
 name = "yaltri-calc"
-version = "0.5.3"
+version = "0.6.0"
 dependencies = [
  "fend-core",
  "yaltri-core",
@@ -8965,7 +8965,7 @@ dependencies = [
 
 [[package]]
 name = "yaltri-color"
-version = "0.5.3"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -8975,7 +8975,7 @@ dependencies = [
 
 [[package]]
 name = "yaltri-core"
-version = "0.5.3"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "directories",
@@ -8986,7 +8986,7 @@ dependencies = [
 
 [[package]]
 name = "yaltri-files"
-version = "0.5.3"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "jwalk",
@@ -8999,7 +8999,7 @@ dependencies = [
 
 [[package]]
 name = "yaltri-platform"
-version = "0.5.3"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "ashpd 0.14.0",

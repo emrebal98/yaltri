@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/emrebal98/yaltri/compare/v0.5.3...v0.6.0) (2026-11-21)
+
+
+### Features
+
+* **apps:** pick up new apps right away ([#64](https://github.com/emrebal98/yaltri/issues/64)) ([62dcc24](https://github.com/emrebal98/yaltri/commit/62dcc24d2172072486cc4f23f78ab1bd52ae463f))
+
 ## [0.5.3](https://github.com/emrebal98/yaltri/compare/v0.5.2...v0.5.3) (2026-11-20)
 
 
