@@ -532,7 +532,11 @@ impl Daemon {
         self.files.as_ref().map(|(_, i)| i.status())
     }
 
-    pub fn rescan_files(&self) {
+    /// Rediscovers apps and rescans indexed files.
+    pub fn rescan(&self) {
+        if let Some(apps) = &self.apps {
+            apps.rescan();
+        }
         if let Some((_, indexer)) = &self.files {
             indexer.rescan();
         }

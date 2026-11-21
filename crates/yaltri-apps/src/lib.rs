@@ -26,6 +26,18 @@ use yaltri_core::{ItemAction, ItemKind, Scope, SearchItem, SearchProvider};
 const SCORE_BASE: u32 = 500;
 const SCORE_MAX: u32 = 900;
 const REFRESH_EVERY: Duration = Duration::from_secs(10 * 60);
+/// After a wake-up (an applications folder changed, a click), wait this long
+/// for the rest of the burst (an install writes several files) before
+/// rediscovering.
+const SETTLE: Duration = Duration::from_millis(500);
+
+/// What wakes the discovery thread early.
+enum Msg {
+    /// Launcher switches changed.
+    Games(GamesSettings),
+    /// Something asked for a fresh look (the settings button, a watcher).
+    Rescan,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct App {
@@ -88,22 +100,56 @@ fn dedupe(apps: Vec<App>) -> Vec<App> {
     apps.into_iter().filter(|a| seen.insert(a.name.to_lowercase())).collect()
 }
 
+/// Asks for a rescan whenever a `.desktop` file appears, changes or goes
+/// away in an applications folder that exists now. `None` if inotify is
+/// unavailable; the periodic refresh still covers that case.
+#[cfg(not(windows))]
+fn watch_application_dirs(tx: Sender<Msg>) -> Option<notify::RecommendedWatcher> {
+    use notify::{EventKind, RecursiveMode, Watcher};
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let Ok(event) = res else { return };
+        // Discovery reads these files; reacting to reads would loop forever.
+        if matches!(event.kind, EventKind::Access(_)) {
+            return;
+        }
+        let relevant =
+            event.need_rescan() || event.paths.iter().any(|p| p.extension().is_some_and(|x| x == "desktop"));
+        if relevant {
+            let _ = tx.send(Msg::Rescan);
+        }
+    })
+    .inspect_err(|e| tracing::warn!(%e, "cannot watch applications folders"))
+    .ok()?;
+    for dir in desktop::application_dirs().into_iter().filter(|d| d.is_dir()) {
+        if let Err(e) = watcher.watch(&dir, RecursiveMode::Recursive) {
+            tracing::debug!(%e, dir = %dir.display(), "not watching applications folder");
+        }
+    }
+    Some(watcher)
+}
+
 pub struct AppsProvider {
     apps: Arc<RwLock<Vec<App>>>,
     matcher: Mutex<Matcher>,
-    /// Wakes the discovery thread with new game settings.
-    refresh: Option<Sender<GamesSettings>>,
+    /// Wakes the discovery thread.
+    refresh: Option<Sender<Msg>>,
 }
 
 impl AppsProvider {
     /// Discovers apps and games in the background now, every few minutes,
-    /// and whenever `set_games` changes which launchers are searched.
+    /// whenever `set_games` changes which launchers are searched, on
+    /// `rescan`, and (Linux) when an applications folder changes.
     /// `icon_cache` holds extracted icons (Windows).
     pub fn start(icon_cache: PathBuf, games: GamesSettings) -> Self {
         let apps: Arc<RwLock<Vec<App>>> = Arc::default();
         let shared = apps.clone();
-        let (tx, rx) = mpsc::channel::<GamesSettings>();
+        let (tx, rx) = mpsc::channel::<Msg>();
+        #[cfg(not(windows))]
+        let watcher = watch_application_dirs(tx.clone());
         let _ = thread::Builder::new().name("yaltri-apps".into()).spawn(move || {
+            // Lives as long as the thread, so changes keep arriving.
+            #[cfg(not(windows))]
+            let _watcher = watcher;
             let mut games = games;
             loop {
                 let mut found = discover(&games);
@@ -117,7 +163,15 @@ impl AppsProvider {
                 tracing::info!(with_icon, took = ?started.elapsed(), "application icons ready");
                 *shared.write().unwrap() = found;
                 match rx.recv_timeout(REFRESH_EVERY) {
-                    Ok(new) => games = new,
+                    Ok(msg) => {
+                        // Fold a burst (an install, repeated clicks) into one pass.
+                        thread::sleep(SETTLE);
+                        for msg in std::iter::once(msg).chain(rx.try_iter()) {
+                            if let Msg::Games(new) = msg {
+                                games = new;
+                            }
+                        }
+                    }
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
@@ -133,7 +187,14 @@ impl AppsProvider {
     /// Re-discovers now with these launchers enabled.
     pub fn set_games(&self, games: GamesSettings) {
         if let Some(tx) = &self.refresh {
-            let _ = tx.send(games);
+            let _ = tx.send(Msg::Games(games));
+        }
+    }
+
+    /// Re-discovers now with the current settings.
+    pub fn rescan(&self) {
+        if let Some(tx) = &self.refresh {
+            let _ = tx.send(Msg::Rescan);
         }
     }
 
